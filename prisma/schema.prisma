@@ -1,0 +1,12 @@
+// The app connects as the restricted database role (DATABASE_URL).
+// Migrations run as the owner role (MIGRATION_DATABASE_URL), so the app never owns a table.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("MIGRATION_DATABASE_URL")
+}

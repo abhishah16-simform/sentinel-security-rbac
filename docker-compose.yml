@@ -1,0 +1,33 @@
+# Optional: Postgres in Docker. Skip the postgres service if you use a local PostgreSQL
+# (see README), and run only Mailpit with `docker-compose up -d mailpit`.
+services:
+  postgres:
+    image: postgres:17.12-alpine
+    environment:
+      # Owner role: runs migrations and owns every table. The app never connects as this role.
+      POSTGRES_USER: sentinel_owner
+      POSTGRES_PASSWORD: sentinel_owner
+      POSTGRES_DB: sentinel
+      # Restricted role the app connects as, created by db/docker-init.sh
+      SENTINEL_APP_ROLE: sentinel_app
+      SENTINEL_APP_PASSWORD: sentinel_app
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db:/sentinel-db:ro
+      - ./db/docker-init.sh:/docker-entrypoint-initdb.d/01-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel_owner -d sentinel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.34
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web inbox
+
+volumes:
+  postgres-data:
