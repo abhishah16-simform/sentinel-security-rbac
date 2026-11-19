@@ -8,8 +8,9 @@ interface DbRoleInfo {
 }
 
 /**
- * Refuses to start the app if its Postgres login role could bypass Row-Level Security:
- * a superuser, a role with BYPASSRLS, or a role that owns the public schema or any table.
+ * Warns at startup if the app's Postgres role is a superuser or has BYPASSRLS. Postgres never
+ * applies Row-Level Security to such roles, not even with FORCE ROW LEVEL SECURITY, so tenant
+ * isolation would then not be enforced by the database. The app still starts.
  */
 @Injectable()
 export class DbRoleCheck implements OnApplicationBootstrap {
@@ -24,24 +25,11 @@ export class DbRoleCheck implements OnApplicationBootstrap {
       throw new Error('Could not determine the connected database role');
     }
     if (dbRole.rolsuper || dbRole.rolbypassrls) {
-      throw new Error(
-        `Database role "${dbRole.rolname}" can bypass Row-Level Security; connect as the restricted database role instead`,
+      this.logger.warn(
+        `Database role "${dbRole.rolname}" bypasses Row-Level Security, so tenant isolation is NOT enforced by the database. Connect as a role that is not a superuser and has no BYPASSRLS to enforce it.`,
       );
+      return;
     }
-    const [{ ownedTables, ownsPublicSchema }] = await this.prisma.$queryRaw<
-      { ownedTables: bigint; ownsPublicSchema: boolean }[]
-    >`
-      SELECT
-        (SELECT count(*) FROM pg_tables
-          WHERE tableowner = current_user
-            AND schemaname NOT IN ('pg_catalog', 'information_schema')) AS "ownedTables",
-        (SELECT pg_get_userbyid(nspowner) = current_user
-          FROM pg_namespace WHERE nspname = 'public') AS "ownsPublicSchema"`;
-    if (ownedTables > 0n || ownsPublicSchema) {
-      throw new Error(
-        `Database role "${dbRole.rolname}" owns the public schema or its tables; the app must not own what it queries`,
-      );
-    }
-    this.logger.log(`Connected to Postgres as restricted database role "${dbRole.rolname}"`);
+    this.logger.log(`Connected to Postgres as database role "${dbRole.rolname}"`);
   }
 }

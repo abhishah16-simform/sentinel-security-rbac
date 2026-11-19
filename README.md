@@ -9,27 +9,23 @@ A multi-tenant authorization and security compliance service. See [CONTEXT.md](C
 
 ## Local setup
 
-These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker instead, use `npm run db:up` (it listens on port 5433 with the passwords in `docker-compose.yml`) and point the URLs in `.env` there.
+These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker instead, use `npm run db:up` (port 5433, user and password `sentinel`) and point `DATABASE_URL` there.
 
-1. Create the database and its two roles (run once, as the `postgres` superuser). Pick your own passwords:
+1. Create the database and its role (run once, as the `postgres` superuser). Pick your own password:
 
    ```bash
-   sudo -u postgres psql \
-     -v db_name=sentinel \
-     -v owner_role=sentinel_owner -v owner_password='CHANGE_ME_OWNER' \
-     -v app_role=sentinel_app -v app_password='CHANGE_ME_APP' \
-     -f db/create-local-db.sql
+   sudo -u postgres psql -v db_name=sentinel -v db_user=sentinel \
+     -v db_password='CHANGE_ME' -f db/create-db.sql
    ```
 
-2. Create a `.env` file in the project root with the same passwords:
+   You can also connect as `postgres` directly. The app will start, but it logs a warning, because Row-Level Security never applies to a superuser.
+
+2. Create a `.env` file in the project root:
 
    ```bash
    cat > .env <<'ENV'
    PORT=3000
-   # The app connects as the restricted sentinel_app role
-   DATABASE_URL=postgresql://sentinel_app:CHANGE_ME_APP@localhost:5432/sentinel
-   # Only the Prisma CLI uses this; migrations run as the owner role
-   MIGRATION_DATABASE_URL=postgresql://sentinel_owner:CHANGE_ME_OWNER@localhost:5432/sentinel
+   DATABASE_URL=postgresql://sentinel:CHANGE_ME@localhost:5432/sentinel
    ENV
    ```
 
@@ -52,7 +48,7 @@ These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker i
    export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
    ```
 
-5. Open <http://localhost:3000> for the frontend, or <http://localhost:3000/v1/health> for the health check.
+5. Open <http://localhost:3000> for the status page, or <http://localhost:3000/v1/health> for the JSON health check.
 
 ## Commands
 
@@ -64,14 +60,12 @@ These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker i
 | `npm run build` | Compile to `dist/` |
 | `npm run lint` | Lint with ESLint |
 | `npm run typecheck` | Typecheck with `tsc --noEmit` |
-| `npm run prisma:migrate` | Create and apply a migration as the owner role, then lock Prisma's migrations table |
-| `npm run prisma:deploy` | Apply existing migrations (e.g. in production), then lock the migrations table |
+| `npm run prisma:migrate` | Create a migration file and apply it (development) |
+| `npm run prisma:deploy` | Apply existing migrations (deployment) |
 
-## Database roles
+## Database role
 
-Two Postgres roles exist so that Row-Level Security can never be bypassed by the app. Both the local script and Docker set them up from the same file, `db/setup-app-role.sql`:
+Sentinel uses one Postgres role for everything: it owns the tables, runs migrations and is what the app connects as ([ADR 0003](docs/adr/0003-single-database-role.md)).
 
-- **`sentinel_owner`** owns every table and runs migrations. The app never connects as it.
-- **`sentinel_app`** is what the app connects as. It is not a superuser, cannot bypass RLS and owns nothing. Tables created by migrations are granted to it automatically.
-
-On startup the app checks its own role and refuses to start if that role is a superuser, can bypass RLS, or owns the `public` schema or any table. After every migration, `_prisma_migrations` is locked so only the owner role can touch it.
+- Every Tenant table's migration must run both `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`; without `FORCE`, RLS doesn't apply to the table's owner.
+- The role must not be a superuser or have `BYPASSRLS`, because RLS never applies to those. The app logs a warning at startup if it is connected as such a role.

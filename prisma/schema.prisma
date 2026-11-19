@@ -1,12 +1,11 @@
-// The app connects as the restricted database role (DATABASE_URL).
-// Migrations run as the owner role (MIGRATION_DATABASE_URL), so the app never owns a table.
+// One database role owns the tables, runs migrations and is used by the app (DATABASE_URL).
+// Every Tenant table must use FORCE ROW LEVEL SECURITY; see docs/adr/0003-single-database-role.md.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("MIGRATION_DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }

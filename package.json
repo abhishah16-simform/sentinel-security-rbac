@@ -11,15 +11,14 @@
     "db:up": "docker-compose up -d",
     "db:down": "docker-compose down",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev && npm run db:lock-migrations-table",
+    "prisma:migrate": "prisma migrate dev",
     "build": "nest build",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "postinstall": "prisma generate",
-    "prisma:deploy": "prisma migrate deploy && npm run db:lock-migrations-table",
-    "db:lock-migrations-table": "node scripts/lock-migrations-table.mjs",
+    "prisma:deploy": "prisma migrate deploy",
     "mail:up": "docker-compose up -d mailpit"
   },
   "dependencies": {
