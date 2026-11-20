@@ -15,7 +15,7 @@ export class IdentityController {
   @Post('signup')
   @HttpCode(HttpStatus.ACCEPTED)
   async signup(@Body() body: SignupDto): Promise<MessageResponse> {
-    await this.identity.signup(body.email, body.password);
+    await this.identity.signup(body);
     return { message: 'Check your email for a link to verify your address.' };
   }
 

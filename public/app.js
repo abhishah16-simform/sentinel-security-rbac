@@ -48,6 +48,7 @@
       return;
     }
     const me = await Sentinel.api('/v1/me');
+    document.getElementById('me-name').textContent = `${me.firstName} ${me.lastName}`;
     document.getElementById('me-email').textContent = me.email;
     const verified = document.getElementById('me-verified');
     verified.textContent = me.emailVerified ? 'Yes' : 'No';

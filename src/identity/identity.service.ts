@@ -15,14 +15,25 @@ const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 export interface UserProfile {
   readonly id: string;
   readonly email: string;
+  readonly firstName: string;
+  readonly lastName: string;
   readonly emailVerified: boolean;
   readonly isPlatformAdmin: boolean;
+}
+
+export interface SignupInput {
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly password: string;
 }
 
 function toProfile(user: User): UserProfile {
   return {
     id: user.id,
     email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
     emailVerified: user.emailVerifiedAt !== null,
     isPlatformAdmin: user.isPlatformAdmin,
   };
@@ -47,13 +58,14 @@ export class IdentityService {
    * taken, the response is the same and the owner is emailed instead, so signup can't be
    * used to find out which addresses have accounts.
    */
-  async signup(rawEmail: string, password: string): Promise<void> {
-    const email = normalizeEmail(rawEmail);
+  async signup(input: SignupInput): Promise<void> {
+    const { firstName, lastName, password } = input;
+    const email = normalizeEmail(input.email);
     const passwordHash = await this.passwords.hash(password);
 
     let user: User;
     try {
-      user = await this.prisma.user.create({ data: { email, passwordHash } });
+      user = await this.prisma.user.create({ data: { email, firstName, lastName, passwordHash } });
     } catch (error: unknown) {
       if (!isUniqueConstraintError(error)) throw error;
       await this.notifyExistingAccount(email);

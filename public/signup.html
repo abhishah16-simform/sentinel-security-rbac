@@ -11,6 +11,8 @@
       <h1>Create your account</h1>
       <p class="subtitle">One Sentinel login for every Tenant you belong to.</p>
       <form id="signup-form" class="form">
+        <label>First name <input name="firstName" type="text" autocomplete="given-name" required maxlength="100" /></label>
+        <label>Last name <input name="lastName" type="text" autocomplete="family-name" required maxlength="100" /></label>
         <label>Email <input name="email" type="email" autocomplete="email" required maxlength="254" /></label>
         <label>
           Password
@@ -30,6 +32,8 @@
         const message = document.getElementById('message');
         handleForm(form, message, async function (data) {
           const body = await Sentinel.postJson('/v1/auth/signup', {
+            firstName: data.get('firstName'),
+            lastName: data.get('lastName'),
             email: data.get('email'),
             password: data.get('password'),
           });
