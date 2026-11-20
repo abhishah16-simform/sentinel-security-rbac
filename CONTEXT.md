@@ -37,11 +37,31 @@ _Avoid_: Owner, Tenant owner, Org admin
 An operator of Sentinel itself who registers Applications and oversees Tenants, but sits outside all of them and cannot see Tenant data by default.
 _Avoid_: Super admin, Root, Sentinel admin
 
+**Linked Identity**:
+A User's account at an outside identity provider (Google or GitHub) that they can log in to Sentinel with; it is matched by the provider's own user ID, never by email.
+_Avoid_: Social account, Connection, External user
+
+**Erased User**:
+A User whose personal data was removed at their request; the row stays as an anonymized tombstone so the Audit Log still resolves.
+_Avoid_: Deleted user, Removed user
+
+**Privacy Notice Acceptance**:
+The record that a User accepted a given version of the privacy notice, and when.
+_Avoid_: Consent (reserved for Applications), Opt-in
+
 ### Applications and resources
 
 **Application**:
 An outside system, registered once by a Platform Admin, that relies on Sentinel to log its users in and to make access decisions.
 _Avoid_: Client, App, Integration, Service
+
+**Scope**:
+A named piece of access an Application asks for in a token, such as `email` or `access-check`; an Application may only request the Scopes registered for it.
+_Avoid_: Permission (reserved for Roles), Claim
+
+**Consent**:
+A User's recorded approval that one Application may receive a given set of Scopes on their behalf; the User can withdraw it.
+_Avoid_: Authorization, Grant
 
 **Application Schema**:
 The set of Resource Types and Actions an Application declares; it is the same for every Tenant. Entries can be added or deprecated, but never removed.

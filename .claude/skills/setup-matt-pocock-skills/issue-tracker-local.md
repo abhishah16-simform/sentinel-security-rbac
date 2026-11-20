@@ -6,7 +6,10 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 
 - One feature per directory: `.scratch/<feature-slug>/`
 - The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`, never a single combined tickets file
+- Implementation issues are one file per ticket, numbered from `01`, never a single combined tickets file
+  - A feature with 10 or fewer tickets keeps them flat: `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
+  - A feature with more than 10 tickets groups them into module folders of 4 to 7 related tickets: `.scratch/<feature-slug>/issues/m<N>-<module-slug>/<NN>-<slug>.md`. Numbers stay unique across folders, each ticket has a `**Module:**` line, and `.scratch/<feature-slug>/modules.md` lists the modules, their tickets and the cross-module blockers
+  - To find a ticket by number, search `issues/` recursively
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 

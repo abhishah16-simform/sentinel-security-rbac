@@ -47,6 +47,8 @@ Present the proposed breakdown as a numbered list. For each ticket, show:
 - **Blocked by**: which other tickets (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this ticket makes work
 
+If the feature will have **more than 10 tickets** (counting tickets already in its `issues/` folder), also propose a **module grouping**: related tickets in modules of 4 to 7 each, with a short name per module (for example `m1-identity-sessions`). Group by the domain area or code module a ticket mostly touches, not by build order. Show each module with its tickets and ask the user to approve it along with the breakdown.
+
 Ask the user:
 
 - Does the granularity feel right? (too coarse / too fine)
@@ -59,7 +61,10 @@ Iterate until the user approves the breakdown.
 
 Publish the approved tickets. **How** depends on the tracker `/setup-matt-pocock-skills` configured; the tickets are the same either way, only the shape of the blocking edges changes:
 
-- **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below: one ticket per file, never a single combined file.
+- **Local files** → one file per ticket, never a single combined file, using the per-ticket file template below. Number tickets from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Where the files go depends on the feature's total ticket count:
+  - **10 or fewer tickets**: write them flat, as `.scratch/<feature-slug>/issues/<NN>-<slug>.md`.
+  - **More than 10 tickets**: write each ticket into its approved module's folder, `.scratch/<feature-slug>/issues/m<N>-<module-slug>/<NN>-<slug>.md`. Modules hold 4 to 7 related tickets each. Ticket numbers stay unique across all module folders, so "Blocked by" still names tickets by number alone. Add a `**Module:**` line to each ticket, and write or update `.scratch/<feature-slug>/modules.md`: one section per module with its folder, a one-line purpose, the code modules it touches, a table of its tickets and their status, and its blockers in other modules. End it with a suggested build order.
+  - **Adding tickets to an existing feature**: if it already uses module folders, put each new ticket in the module it belongs to, or start a new module if none fits (moving tickets if needed to keep every module at 4 to 7), and update `modules.md`. If the new tickets take a flat feature past 10, move every ticket into module folders as described above. Continue numbering after the highest existing ticket.
 - **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking / sub-issue relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. Apply the `ready-for-agent` triage label unless instructed otherwise; the tickets are agent-grabbable by construction.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
@@ -73,6 +78,8 @@ Do NOT close or modify any parent issue.
 **What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective, not a layer-by-layer implementation list.
 
 **Blocked by:** the numbers/titles of the tickets that gate this one, or "None (can start immediately)".
+
+**Module:** m<N> <Module name> (see [modules.md](../../modules.md)). Only when the feature uses module folders; leave this line out otherwise.
 
 **Status:** ready-for-agent
 

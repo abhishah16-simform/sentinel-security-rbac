@@ -20,7 +20,7 @@ This project has no automated tests by the owner's choice. Do not add Jest, Supe
 
 ## Ticket workflow
 
-1. Read the ticket in `.scratch/sentinel/issues/NN-*.md`, plus `spec.md`, `CONTEXT.md` and the relevant ADRs
+1. Read the ticket in `.scratch/sentinel/issues/<module>/NN-*.md` (see `.scratch/sentinel/modules.md`), plus `spec.md`, `CONTEXT.md` and the relevant ADRs
 2. Implement, then run typecheck, lint and a manual API and browser check
 3. Commit only this ticket's files; the owner may have uncommitted work in progress, so stage paths explicitly (never `git add -A` blindly)
 4. Run `/code-review HEAD~1` with the ticket as the spec, fix the findings, and commit the fixes separately
