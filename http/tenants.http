@@ -1,0 +1,30 @@
+# Tenant creation and the Active Tenant (ticket 03). Log in first with http/auth.http.
+# Switching the Active Tenant uses the refresh-token cookie (see the note in auth.http).
+
+@baseUrl = http://localhost:3000
+@accessToken = paste-access-token
+@tenantId = paste-tenant-id
+@refreshToken = paste-from-set-cookie
+
+### Create a Tenant (verified email required). You become its Tenant Admin.
+POST {{baseUrl}}/v1/tenants
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Acme" }
+
+### The Tenants you belong to (Tenant picker)
+GET {{baseUrl}}/v1/tenants
+Authorization: Bearer {{accessToken}}
+
+### Make a Tenant your Active Tenant. Returns an access token with tid and mid,
+### and a new refresh-token cookie in the same login.
+PUT {{baseUrl}}/v1/auth/refresh/active-tenant
+Content-Type: application/json
+# Cookie: sentinel_refresh={{refreshToken}}
+
+{ "tenantId": "{{tenantId}}" }
+
+### Your Active Tenant (needs an access token from the switch above)
+GET {{baseUrl}}/v1/tenants/current
+Authorization: Bearer {{accessToken}}

@@ -25,9 +25,14 @@ export class AccessTokenGuard implements CanActivate {
   }
 }
 
-/** The verified access token claims of the current request. Use only behind AccessTokenGuard. */
-export const CurrentClaims = createParamDecorator((_data: unknown, context: ExecutionContext): AccessTokenClaims => {
+/** The verified access token claims of the current request. Only valid after AccessTokenGuard has run. */
+export function currentClaimsOf(context: ExecutionContext): AccessTokenClaims {
   const claims = context.switchToHttp().getRequest<AuthenticatedRequest>().accessToken;
   if (!claims) throw new UnauthorizedException('Missing bearer access token');
   return claims;
-});
+}
+
+/** The verified access token claims of the current request. Use only behind AccessTokenGuard. */
+export const CurrentClaims = createParamDecorator((_data: unknown, context: ExecutionContext): AccessTokenClaims =>
+  currentClaimsOf(context),
+);

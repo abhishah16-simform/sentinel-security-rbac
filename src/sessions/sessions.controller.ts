@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Put, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AccessTokenGuard, CurrentClaims } from './access-token.guard';
-import type { AccessTokenClaims } from './access-token.service';
+import { AccessTokenGuard, CurrentClaims } from '../access-token/access-token.guard';
+import type { AccessTokenClaims } from '../access-token/access-token.service';
 import { LoginDto } from './dto/login.dto';
+import { SwitchTenantDto } from './dto/switch-tenant.dto';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './refresh-cookie';
 import { SessionsService, type SessionTokens } from './sessions.service';
 
@@ -35,6 +36,27 @@ export class SessionsController {
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
     try {
       return respondWithTokens(res, await this.sessions.refresh(refreshToken));
+    } catch (error: unknown) {
+      if (error instanceof UnauthorizedException) clearRefreshCookie(res);
+      throw error;
+    }
+  }
+
+  /**
+   * Switch the Active Tenant. Lives under the refresh path because it uses the refresh-token
+   * cookie: the login's chain moves to the new Tenant and a new token pair is issued in it.
+   */
+  @Put('refresh/active-tenant')
+  @HttpCode(HttpStatus.OK)
+  async switchTenant(
+    @Req() req: Request,
+    @Body() body: SwitchTenantDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AccessTokenResponse> {
+    const refreshToken = readRefreshCookie(req);
+    if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
+    try {
+      return respondWithTokens(res, await this.sessions.switchTenant(refreshToken, body.tenantId));
     } catch (error: unknown) {
       if (error instanceof UnauthorizedException) clearRefreshCookie(res);
       throw error;

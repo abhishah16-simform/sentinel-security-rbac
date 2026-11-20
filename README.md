@@ -78,6 +78,25 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - Applications verify access tokens with the public key at `/.well-known/jwks.json`. The key ID (`kid`) is the key's RFC 7638 thumbprint, so a new key always gets a new ID.
 - [`http/auth.http`](http/auth.http) walks through the whole flow.
 
+## Tenants and isolation
+
+- `POST /v1/tenants` creates a Tenant; the caller becomes its first Tenant Admin. Only Users with a verified email may.
+- `GET /v1/tenants` lists the caller's Tenants (the Tenant picker). `GET /v1/tenants/current` returns the Active Tenant.
+- `PUT /v1/auth/refresh/active-tenant` with `{ "tenantId": "..." }` switches the Active Tenant. It uses the refresh-token cookie and returns new tokens in the same login, with `tid` and `mid` claims.
+- Tenant isolation is enforced by Postgres Row-Level Security. Every Tenant-owned table has a `tenantId` column, and its migration must add, by hand, after `prisma migrate dev --create-only`:
+
+  ```sql
+  ALTER TABLE "x" ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE "x" FORCE ROW LEVEL SECURITY;
+  CREATE POLICY tenant_isolation ON "x"
+    USING ("tenantId" = app_current_tenant_id())
+    WITH CHECK ("tenantId" = app_current_tenant_id());
+  ```
+
+- Tenant-scoped code runs through `ScopedPrisma.inTenant(tenantId, tx => ...)`, which sets `app.tenant_id` for that transaction before any query. At startup the app warns about any table with a `tenantId` column that is missing `ENABLE`, `FORCE` or a policy.
+- RLS doesn't apply while the app connects as `postgres` (a superuser). See [Database user](#database-user).
+- [`http/tenants.http`](http/tenants.http) walks through it.
+
 ## Commands
 
 | Command | What it does |

@@ -26,6 +26,7 @@ model User {
 
   emailVerificationTokens EmailVerificationToken[]
   refreshChains           RefreshChain[]
+  memberships             Membership[]
 
   @@map("users")
 }
@@ -52,13 +53,19 @@ model EmailVerificationToken {
 /// One login. Every refresh token issued from that login belongs to its chain;
 /// revoking the chain ends the login on that device.
 model RefreshChain {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @db.Uuid
+  /// The Active Tenant of this login and the User's Membership in it; null until one is chosen.
+  /// Not named tenantId: this table is platform-level, and a tenantId column marks a Tenant-owned table.
+  activeTenantId     String?   @db.Uuid
+  activeMembershipId String?   @db.Uuid
+  revokedAt          DateTime?
+  createdAt          DateTime  @default(now())
 
-  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokens RefreshToken[]
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeTenant     Tenant?        @relation(fields: [activeTenantId], references: [id], onDelete: SetNull)
+  activeMembership Membership?    @relation(fields: [activeMembershipId], references: [id], onDelete: SetNull)
+  tokens           RefreshToken[]
 
   @@index([userId])
   @@map("refresh_chains")
@@ -78,4 +85,43 @@ model RefreshToken {
 
   @@index([chainId])
   @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+//
+// Tenant is platform-level (the Tenant list): no RLS.
+// Every Tenant-owned table has a non-null tenantId column, and its migration must
+// ENABLE and FORCE ROW LEVEL SECURITY with a policy on app.tenant_id (ADR 0003).
+// The startup check warns about any table with a tenantId column that lacks either.
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   Membership[]
+  refreshChains RefreshChain[]
+
+  @@map("tenants")
+}
+
+/// Tenant-owned (RLS). Rows are visible when tenantId matches app.tenant_id, or, for a User's
+/// own Memberships only, when userId matches app.user_id (used by the Tenant picker).
+model Membership {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  userId        String   @db.Uuid
+  isTenantAdmin Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshChains RefreshChain[]
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("memberships")
 }

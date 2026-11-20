@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { PrismaService } from '../prisma/prisma.service';
+import type { ActiveTenantRef } from '../tenancy/tenancy.service';
 
 export const REFRESH_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -11,7 +12,13 @@ export interface IssuedRefreshToken {
 }
 
 export type RotationResult =
-  | { readonly kind: 'rotated'; readonly userId: string; readonly next: IssuedRefreshToken }
+  | {
+      readonly kind: 'rotated';
+      readonly userId: string;
+      /** The login's Active Tenant after this rotation; null until one is chosen. */
+      readonly activeTenant: ActiveTenantRef | null;
+      readonly next: IssuedRefreshToken;
+    }
   | { readonly kind: 'rejected' }
   | { readonly kind: 'reused'; readonly userId: string; readonly chainId: string };
 
@@ -33,8 +40,20 @@ export class RefreshTokenService {
     });
   }
 
-  /** Uses a refresh token once, returning its replacement, or revokes its chain if it was reused. */
-  async rotate(token: string): Promise<RotationResult> {
+  /** The User a refresh token was issued to, without using it. Null for unknown tokens. */
+  async ownerOf(token: string): Promise<string | null> {
+    const found = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: hashOpaqueToken(token) },
+      select: { chain: { select: { userId: true } } },
+    });
+    return found?.chain.userId ?? null;
+  }
+
+  /**
+   * Uses a refresh token once, returning its replacement in the same chain, or revokes the chain
+   * if the token was already used. With switchTo, the login's Active Tenant changes as well.
+   */
+  async rotate(token: string, switchTo?: ActiveTenantRef): Promise<RotationResult> {
     const tokenHash = hashOpaqueToken(token);
     const result = await this.prisma.$transaction(async (tx): Promise<RotationResult> => {
       const tokenChain = await tx.refreshToken.findUnique({ where: { tokenHash }, select: { chainId: true } });
@@ -55,7 +74,18 @@ export class RefreshTokenService {
       if (current.expiresAt <= now) return { kind: 'rejected' };
 
       await tx.refreshToken.update({ where: { id: current.id }, data: { usedAt: now } });
-      return { kind: 'rotated', userId: chain.userId, next: await this.issueInChain(tx, chain.id) };
+      let active: ActiveTenantRef | null =
+        chain.activeTenantId !== null && chain.activeMembershipId !== null
+          ? { tenantId: chain.activeTenantId, membershipId: chain.activeMembershipId }
+          : null;
+      if (switchTo) {
+        await tx.refreshChain.update({
+          where: { id: chain.id },
+          data: { activeTenantId: switchTo.tenantId, activeMembershipId: switchTo.membershipId },
+        });
+        active = switchTo;
+      }
+      return { kind: 'rotated', userId: chain.userId, activeTenant: active, next: await this.issueInChain(tx, chain.id) };
     });
 
     if (result.kind === 'reused') {

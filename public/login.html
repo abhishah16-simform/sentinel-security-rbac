@@ -24,7 +24,14 @@
       (function () {
         handleForm(document.getElementById('login-form'), document.getElementById('message'), async function (data) {
           await Sentinel.login(data.get('email'), data.get('password'));
-          window.location.href = '/';
+          // One Tenant: go straight into it. Several: let the User pick. None: home offers to create one.
+          const tenants = (await Sentinel.api('/v1/tenants')).items;
+          if (tenants.length === 1) {
+            await Sentinel.switchTenant(tenants[0].tenantId);
+            window.location.href = '/';
+          } else {
+            window.location.href = tenants.length > 1 ? '/tenants.html' : '/';
+          }
         });
       })();
     </script>

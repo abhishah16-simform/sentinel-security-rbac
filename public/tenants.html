@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tenants · Sentinel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Your Tenants</h1>
+      <p class="subtitle">You act in one Tenant at a time: your Active Tenant.</p>
+
+      <section aria-live="polite">
+        <h2>Choose your Active Tenant</h2>
+        <p id="loading">Loading…</p>
+        <p id="empty" hidden>You don't belong to any Tenant yet. Create one below.</p>
+        <ul id="tenant-list" class="status tenant-list"></ul>
+      </section>
+
+      <section>
+        <h2>Create a Tenant</h2>
+        <p class="hint">You become its first Tenant Admin. Your email must be verified.</p>
+        <form id="create-form" class="form">
+          <label>Name <input name="name" required maxlength="100" autocomplete="organization" /></label>
+          <button type="submit">Create Tenant</button>
+        </form>
+      </section>
+
+      <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+      <p class="links"><a href="/">Home</a></p>
+    </main>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/tenants.js"></script>
+  </body>
+</html>

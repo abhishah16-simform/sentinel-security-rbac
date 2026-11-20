@@ -171,3 +171,13 @@ button:disabled {
 a {
   color: var(--accent);
 }
+
+.tenant-list li {
+  align-items: center;
+  gap: 12px;
+}
+
+button.small {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}

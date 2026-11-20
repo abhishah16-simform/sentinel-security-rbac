@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import type { Env } from './config/env';
-import { JWKS_PATH } from './sessions/jwks.controller';
+import { JWKS_PATH } from './access-token/jwks.controller';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);

@@ -53,6 +53,14 @@
     verified.textContent = me.emailVerified ? 'Yes' : 'No';
     verified.className = me.emailVerified ? 'up' : 'down';
     resend.hidden = me.emailVerified;
+    const activeTenant = document.getElementById('active-tenant');
+    if (Sentinel.claims().tid) {
+      const current = await Sentinel.api('/v1/tenants/current');
+      activeTenant.textContent = current.tenantName + (current.isTenantAdmin ? ' (Tenant Admin)' : '');
+      document.getElementById('tenant-link').textContent = 'Switch Tenant';
+    } else {
+      activeTenant.textContent = 'None';
+    }
     resend.onclick = async function () {
       resend.disabled = true;
       try {

@@ -82,9 +82,27 @@
     }
   }
 
+  // Reads the access token's claims for display only; the server verifies the token on every call.
+  function claims() {
+    if (!accessToken) return null;
+    const part = accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part));
+  }
+
   window.Sentinel = {
     postJson: postJson,
     api: api,
+    claims: claims,
+    // Makes a Tenant the Active Tenant: the refresh cookie is swapped for new tokens carrying it.
+    async switchTenant(tenantId) {
+      useTokens(await withRefreshLock(function () {
+        return request('/v1/auth/refresh/active-tenant', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: tenantId }),
+        });
+      }));
+    },
     async login(email, password) {
       useTokens(await postJson('/v1/auth/login', { email: email, password: password }));
     },
