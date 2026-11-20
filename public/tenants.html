@@ -7,31 +7,81 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="card">
-      <h1>Your Tenants</h1>
-      <p class="subtitle">You act in one Tenant at a time: your Active Tenant.</p>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Tenants</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
 
-      <section aria-live="polite">
-        <h2>Choose your Active Tenant</h2>
-        <p id="loading">Loading…</p>
-        <p id="empty" hidden>You don't belong to any Tenant yet. Create one below.</p>
-        <ul id="tenant-list" class="status tenant-list"></ul>
-      </section>
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Tenants</h1>
+              <p class="subtitle">You act in one Tenant at a time: your Active Tenant. Switch any time.</p>
+            </div>
+          </div>
 
-      <section>
-        <h2>Create a Tenant</h2>
-        <p class="hint">You become its first Tenant Admin. Your email must be verified.</p>
-        <form id="create-form" class="form">
-          <label>Name <input name="name" required maxlength="100" autocomplete="organization" /></label>
-          <button type="submit">Create Tenant</button>
-        </form>
-      </section>
+          <div class="grid">
+            <section class="card" aria-labelledby="list-title" aria-live="polite">
+              <div class="card-header">
+                <div>
+                  <h2 id="list-title">Your Tenants</h2>
+                  <p>Every Tenant you are a member of.</p>
+                </div>
+                <span class="badge accent" id="tenant-count" hidden></span>
+              </div>
+              <div id="loading" class="skeleton-wrap">
+                <div class="skeleton"></div>
+                <div class="skeleton" style="width: 70%"></div>
+                <div class="skeleton" style="width: 85%"></div>
+              </div>
+              <div id="empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="building"></i></span>
+                <strong>No Tenants yet</strong>
+                <span>Create your first Tenant to start managing access.</span>
+              </div>
+              <div class="card-body">
+                <ul id="tenant-list" class="status tenant-list"></ul>
+              </div>
+            </section>
 
-      <p id="message" class="message" role="status" aria-live="polite" hidden></p>
-      <p class="links"><a href="/">Home</a></p>
-    </main>
+            <section class="card" aria-labelledby="create-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="create-title">Create a Tenant</h2>
+                  <p>You become its first Tenant Admin.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="plus"></i></span>
+              </div>
+              <div class="card-body padded">
+                <form id="create-form" class="form" style="margin-top: 0">
+                  <label>
+                    Tenant name
+                    <input name="name" required maxlength="100" autocomplete="organization" placeholder="Acme Inc." />
+                    <span class="hint">Usually your company or team name. Your email must be verified.</span>
+                  </label>
+                  <button type="submit"><i data-icon="plus"></i>Create Tenant</button>
+                </form>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
     <script src="/forms.js"></script>
     <script src="/session.js"></script>
+    <script src="/shell.js"></script>
     <script src="/tenants.js"></script>
   </body>
 </html>

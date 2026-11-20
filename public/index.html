@@ -3,55 +3,153 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sentinel</title>
+    <title>Overview · Sentinel</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="card">
-      <h1>Sentinel</h1>
-      <p class="subtitle">Authorization and security compliance service</p>
+    <div id="account-loading" class="welcome" aria-live="polite">
+      <div class="welcome-card">
+        <span class="brand-mark"><i data-icon="shield"></i></span>
+        <p class="subtitle">Checking your session…</p>
+      </div>
+    </div>
 
-      <section id="account" aria-live="polite">
-        <h2>Account</h2>
-        <p id="account-loading">Checking your session…</p>
-        <div id="logged-out" hidden>
-          <p class="links"><a href="/login.html">Log in</a> · <a href="/signup.html">Sign up</a></p>
+    <div id="logged-out" class="welcome" hidden>
+      <div class="welcome-card">
+        <a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>Sentinel</a>
+        <h1>Authorization for every Tenant</h1>
+        <p class="subtitle">Log in to manage your Tenants, roles and access, or create an account to get started.</p>
+        <div class="actions">
+          <a class="button" href="/login.html">Log in</a>
+          <a class="button secondary" href="/signup.html">Create account</a>
         </div>
-        <div id="logged-in" hidden>
-          <ul class="status">
-            <li id="name-row" hidden><span>Name</span><span id="me-name"></span></li>
-            <li><span>Email</span><span id="me-email"></span></li>
-            <li><span>Email verified</span><span id="me-verified"></span></li>
-            <li><span>Active Tenant</span><span id="active-tenant"></span></li>
-          </ul>
-          <button id="edit-name" type="button" class="secondary">Edit name</button>
-          <form id="name-form" class="form" hidden>
-            <label>First name <input name="firstName" type="text" autocomplete="given-name" required maxlength="100" /></label>
-            <label>Last name <input name="lastName" type="text" autocomplete="family-name" required maxlength="100" /></label>
-            <div class="actions">
-              <button type="submit">Save name</button>
-              <button id="cancel-name" type="button" class="secondary">Cancel</button>
+      </div>
+    </div>
+
+    <div id="logged-in" class="app-shell" hidden>
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Overview</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Welcome back<span id="greeting"></span></h1>
+              <p class="subtitle">An overview of your account, your Active Tenant and platform health.</p>
             </div>
-          </form>
-          <p class="links"><a href="/tenants.html" id="tenant-link">Choose or create a Tenant</a></p>
-          <button id="resend" type="button" class="secondary" hidden>Resend verification email</button>
-          <div class="actions">
-            <button id="logout" type="button">Log out</button>
-            <button id="logout-all" type="button" class="secondary">Log out everywhere</button>
+            <a class="button secondary" href="/tenants.html" id="tenant-link"><i data-icon="building"></i>Choose or create a Tenant</a>
           </div>
-        </div>
-        <p id="message" class="message" role="status" hidden></p>
-      </section>
 
-      <section aria-live="polite">
-        <h2>System status</h2>
-        <ul id="status" class="status">
-          <li>Checking…</li>
-        </ul>
-      </section>
-    </main>
+          <section class="stats" aria-label="Summary">
+            <div class="card stat">
+              <div class="stat-label"><i data-icon="building"></i>Active Tenant</div>
+              <div class="stat-value" id="active-tenant">–</div>
+            </div>
+            <div class="card stat">
+              <div class="stat-label"><i data-icon="key"></i>Your role</div>
+              <div class="stat-value" id="stat-role">–</div>
+            </div>
+            <div class="card stat">
+              <div class="stat-label"><i data-icon="mail"></i>Email</div>
+              <div class="stat-value"><span id="me-verified"></span></div>
+            </div>
+            <div class="card stat">
+              <div class="stat-label"><i data-icon="activity"></i>Platform</div>
+              <div class="stat-value"><span id="stat-api" class="badge">Checking</span></div>
+            </div>
+          </section>
+
+          <div class="grid">
+            <div class="stack">
+              <section class="card" id="profile" aria-labelledby="profile-title">
+                <div class="card-header">
+                  <div>
+                    <h2 id="profile-title">Profile</h2>
+                    <p>Your personal details, shared across every Tenant.</p>
+                  </div>
+                </div>
+                <div class="profile">
+                  <span class="avatar lg" id="profile-avatar"></span>
+                  <div class="profile-text">
+                    <strong id="profile-name"></strong>
+                    <span id="profile-email"></span>
+                  </div>
+                  <button id="edit-name" type="button" class="secondary small"><i data-icon="pencil"></i>Edit name</button>
+                </div>
+                <form id="name-form" class="form inline-form" hidden>
+                  <div class="row">
+                    <label>First name <input name="firstName" type="text" autocomplete="given-name" required maxlength="100" /></label>
+                    <label>Last name <input name="lastName" type="text" autocomplete="family-name" required maxlength="100" /></label>
+                  </div>
+                  <div class="actions">
+                    <button id="cancel-name" type="button" class="secondary">Cancel</button>
+                    <button type="submit">Save changes</button>
+                  </div>
+                </form>
+                <div class="card-body">
+                  <ul class="status">
+                    <li id="name-row" hidden><span>Name</span><span id="me-name"></span></li>
+                    <li><span>Email</span><span id="me-email"></span></li>
+                    <li><span>Account type</span><span id="me-type"></span></li>
+                    <li><span>User ID</span><span id="me-id" class="hint"></span></li>
+                  </ul>
+                </div>
+                <div class="card-footer" id="verify-footer" hidden>
+                  <span class="hint">Verify your email to create or join Tenants.</span>
+                  <button id="resend" type="button" class="secondary small" hidden>Resend verification email</button>
+                </div>
+              </section>
+            </div>
+
+            <div class="stack">
+              <section class="card" aria-labelledby="sessions-title">
+                <div class="card-header">
+                  <div>
+                    <h2 id="sessions-title">Sessions</h2>
+                    <p>Sign out here, or end every session on every device.</p>
+                  </div>
+                  <span class="icon-tile"><i data-icon="monitor"></i></span>
+                </div>
+                <div class="card-footer">
+                  <button id="logout" type="button" class="secondary"><i data-icon="logout"></i>Log out</button>
+                  <button id="logout-all" type="button" class="danger">Log out everywhere</button>
+                </div>
+              </section>
+
+              <section class="card" aria-labelledby="system-title">
+                <div class="card-header">
+                  <div>
+                    <h2 id="system-title">System status</h2>
+                    <p>Live health of the Sentinel platform.</p>
+                  </div>
+                  <span class="icon-tile"><i data-icon="server"></i></span>
+                </div>
+                <div class="card-body">
+                  <ul id="status" class="status">
+                    <li><span>Checking…</span><span></span></li>
+                  </ul>
+                </div>
+              </section>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
     <script src="/forms.js"></script>
     <script src="/session.js"></script>
+    <script src="/shell.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

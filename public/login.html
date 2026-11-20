@@ -7,17 +7,26 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="card">
-      <h1>Log in</h1>
-      <p class="subtitle">Sentinel</p>
-      <form id="login-form" class="form">
-        <label>Email <input name="email" type="email" autocomplete="username" required maxlength="254" /></label>
-        <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="128" /></label>
-        <button type="submit">Log in</button>
-      </form>
-      <p id="message" class="message" role="alert" hidden></p>
-      <p class="links">New to Sentinel? <a href="/signup.html">Create an account</a></p>
-    </main>
+    <div class="auth-shell">
+      <aside class="auth-aside" id="auth-aside" aria-hidden="true"></aside>
+      <main class="auth-main">
+        <div class="auth-card">
+          <a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>Sentinel</a>
+          <h1>Welcome back</h1>
+          <p class="subtitle">Log in to your Sentinel account.</p>
+          <form id="login-form" class="form">
+            <label>Email <input name="email" type="email" autocomplete="username" required maxlength="254" placeholder="you@company.com" /></label>
+            <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="••••••••••••" /></label>
+            <button type="submit">Log in</button>
+          </form>
+          <p id="message" class="message" role="alert" hidden></p>
+          <p class="links">New to Sentinel? <a href="/signup.html">Create an account</a></p>
+        </div>
+        <p class="auth-legal">Protected by Sentinel · Tenant data is isolated with row-level security</p>
+      </main>
+    </div>
+    <script src="/icons.js"></script>
+    <script src="/auth.js"></script>
     <script src="/forms.js"></script>
     <script src="/session.js"></script>
     <script>

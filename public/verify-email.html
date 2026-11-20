@@ -7,15 +7,26 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="card">
-      <h1>Verify your email</h1>
-      <p id="message" class="message" role="status" aria-live="polite">Checking your link…</p>
-      <form id="resend-form" class="form" hidden>
-        <label>Email <input name="email" type="email" autocomplete="email" required maxlength="254" /></label>
-        <button type="submit">Send a new link</button>
-      </form>
-      <p class="links"><a href="/login.html">Log in</a> · <a href="/">Home</a></p>
-    </main>
+    <div class="auth-shell">
+      <aside class="auth-aside" id="auth-aside" aria-hidden="true"></aside>
+      <main class="auth-main">
+        <div class="auth-card">
+          <a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>Sentinel</a>
+          <div class="status-icon"><i data-icon="mail"></i></div>
+          <h1>Verify your email</h1>
+          <p class="subtitle">Confirming the link from your inbox.</p>
+          <p id="message" class="message" role="status" aria-live="polite">Checking your link…</p>
+          <form id="resend-form" class="form" hidden>
+            <label>Email <input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@company.com" /></label>
+            <button type="submit">Send a new link</button>
+          </form>
+          <p class="links"><a href="/login.html">Back to log in</a></p>
+        </div>
+        <p class="auth-legal">Protected by Sentinel · Tenant data is isolated with row-level security</p>
+      </main>
+    </div>
+    <script src="/icons.js"></script>
+    <script src="/auth.js"></script>
     <script src="/forms.js"></script>
     <script src="/session.js"></script>
     <script>
