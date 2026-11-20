@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { ScopedTransaction } from '../prisma/scoped-prisma';
+import { type ScopedTransaction, setTenantContext } from '../prisma/scoped-prisma';
 import type { AuditEventType } from './audit-event-types';
 import { entryHash, GENESIS_HASH, type HashedEntry, PLATFORM_CHAIN } from './audit-hash';
 
@@ -56,7 +56,7 @@ export class AuditLog {
     const chain = event.tenantId ?? PLATFORM_CHAIN;
     const [previous] = await tx.$queryRaw<TenantSetting[]>`SELECT current_setting('app.tenant_id', true) AS value`;
     // RLS: Tenant entries need that Tenant's context, platform entries need none ('' reads as none).
-    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${event.tenantId ?? ''}, true)`;
+    await setTenantContext(tx, event.tenantId ?? '');
 
     await tx.$executeRaw`
       INSERT INTO audit_chain_heads (chain, seq, hash, "updatedAt") VALUES (${chain}, 0, ${GENESIS_HASH}, now())
@@ -81,6 +81,6 @@ export class AuditLog {
     await tx.auditEvent.create({ data: { ...entry, payload: event.payload ?? {}, prevHash: head.hash, hash } });
     await tx.auditChainHead.update({ where: { chain }, data: { seq: entry.seq, hash } });
 
-    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${previous?.value ?? ''}, true)`;
+    await setTenantContext(tx, previous?.value ?? '');
   }
 }

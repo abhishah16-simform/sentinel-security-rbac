@@ -5,7 +5,7 @@ import { ActiveTenant } from '../tenancy/active-tenant.guard';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
 import { AuditIntegrity, type IntegrityReport } from './audit-integrity.service';
 import { type AuditEventPage, type AuditEventTypeView, AuditQuery } from './audit-query.service';
-import { ListAuditEventsQuery } from './dto/list-audit-events.query';
+import { ListAuditEventsQuery } from './dto/list-audit-events.dto';
 
 interface EventTypeList {
   readonly items: readonly AuditEventTypeView[];

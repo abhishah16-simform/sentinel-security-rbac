@@ -4,7 +4,11 @@ import { PrismaService } from './prisma.service';
 
 export type ScopedTransaction = Prisma.TransactionClient;
 
-/** Sets the Tenant whose rows RLS lets this transaction see. Must run before any other query in it. */
+/**
+ * Sets the Tenant whose rows RLS lets this transaction see ('' for none). Must run before any other
+ * query in it; the one exception is AuditLog.recordIn, which switches to the entry's chain for
+ * its insert and then restores the caller's context.
+ */
 export async function setTenantContext(tx: ScopedTransaction, tenantId: string): Promise<void> {
   await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
 }

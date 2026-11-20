@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma, RefreshChain } from '@prisma/client';
-import { AuditLog } from '../audit/audit-log.service';
+import type { AuditEventType } from '../audit/audit-event-types';
+import { type AuditEventInput, AuditLog, type AuditPayload } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
@@ -12,6 +13,16 @@ function activeTenantOf(chain: RefreshChain): ActiveTenantRef | null {
   return chain.activeTenantId !== null && chain.activeMembershipId !== null
     ? { tenantId: chain.activeTenantId, membershipId: chain.activeMembershipId }
     : null;
+}
+
+/** An Audit Log entry about one login (refresh chain), acted on by its User. */
+function sessionEvent(
+  chain: Pick<RefreshChain, 'id' | 'userId'>,
+  tenantId: string | null,
+  eventType: AuditEventType,
+  payload?: AuditPayload,
+): AuditEventInput {
+  return { tenantId, eventType, actorUserId: chain.userId, target: { type: 'session', id: chain.id }, payload };
 }
 
 export interface IssuedRefreshToken {
@@ -49,12 +60,7 @@ export class RefreshTokenService {
   async startChain(userId: string): Promise<IssuedRefreshToken> {
     return this.prisma.$transaction(async (tx) => {
       const chain = await tx.refreshChain.create({ data: { userId } });
-      await this.audit.recordIn(tx, {
-        tenantId: null,
-        eventType: 'auth.login_succeeded',
-        actorUserId: userId,
-        target: { type: 'session', id: chain.id },
-      });
+      await this.audit.recordIn(tx, sessionEvent(chain, null, 'auth.login_succeeded'));
       return this.issueInChain(tx, chain.id);
     });
   }
@@ -92,12 +98,7 @@ export class RefreshTokenService {
       const now = new Date();
       if (current.usedAt !== null) {
         await this.revokeChains(tx, { id: chain.id }, now);
-        await this.audit.recordIn(tx, {
-          tenantId: chain.activeTenantId,
-          eventType: 'auth.refresh_token_reused',
-          actorUserId: chain.userId,
-          target: { type: 'session', id: chain.id },
-        });
+        await this.audit.recordIn(tx, sessionEvent(chain, chain.activeTenantId, 'auth.refresh_token_reused'));
         return { kind: 'reused', userId: chain.userId, chainId: chain.id };
       }
       if (current.expiresAt <= now) return { kind: 'rejected' };
@@ -117,19 +118,11 @@ export class RefreshTokenService {
       await this.audit.recordIn(
         tx,
         switchTo
-          ? {
-              tenantId: switchTo.tenantId,
-              eventType: 'tenant.switched',
-              actorUserId: chain.userId,
-              target: { type: 'session', id: chain.id },
-              payload: { membershipId: switchTo.membershipId, fromTenantId: chain.activeTenantId },
-            }
-          : {
-              tenantId: activeTenant?.tenantId ?? null,
-              eventType: 'auth.token_refreshed',
-              actorUserId: chain.userId,
-              target: { type: 'session', id: chain.id },
-            },
+          ? sessionEvent(chain, switchTo.tenantId, 'tenant.switched', {
+              membershipId: switchTo.membershipId,
+              fromTenantId: chain.activeTenantId,
+            })
+          : sessionEvent(chain, activeTenant?.tenantId ?? null, 'auth.token_refreshed'),
       );
       return { kind: 'rotated', userId: chain.userId, activeTenant, next: await this.issueInChain(tx, chain.id) };
     });
@@ -153,12 +146,7 @@ export class RefreshTokenService {
     const { chain } = found;
     await this.prisma.$transaction(async (tx) => {
       if ((await this.revokeChains(tx, { id: chain.id }, new Date())) === 0) return;
-      await this.audit.recordIn(tx, {
-        tenantId: chain.activeTenantId,
-        eventType: 'auth.logged_out',
-        actorUserId: chain.userId,
-        target: { type: 'session', id: chain.id },
-      });
+      await this.audit.recordIn(tx, sessionEvent(chain, chain.activeTenantId, 'auth.logged_out'));
     });
   }
 

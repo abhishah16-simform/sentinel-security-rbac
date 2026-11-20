@@ -10,6 +10,8 @@ const VERIFY_TIMEOUT_MS = 60_000;
 export type ChainProblem =
   /** An entry is gone: the sequence skips a number, or ends before the chain head. */
   | 'missing-entry'
+  /** Two entries share a sequence number, so one was not written by the audit writer. */
+  | 'duplicate-entry'
   /** An entry's previous hash isn't the hash of the entry before it. */
   | 'prev-hash-mismatch'
   /** An entry's contents no longer match its own hash. */
@@ -58,6 +60,15 @@ type ChainedEntryRow = Prisma.AuditEventGetPayload<{ select: typeof chainedEntry
 /** The first problem with one entry, given the hash and sequence number the chain expects. */
 function checkEntry(row: ChainedEntryRow, expectedSeq: number, expectedPrevHash: string): BrokenLink | null {
   const { seq, prevHash, hash } = row;
+  if (seq !== null && seq < expectedSeq) {
+    // Tenant chains have a unique (tenantId, seq) index; the platform chain's null tenantId doesn't.
+    return {
+      seq,
+      eventId: row.id,
+      problem: 'duplicate-entry',
+      detail: `Entry ${seq} appears more than once.`,
+    };
+  }
   if (seq === null || seq !== expectedSeq) {
     return {
       seq: expectedSeq,

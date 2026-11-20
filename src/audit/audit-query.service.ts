@@ -4,7 +4,7 @@ import { IdentityService, type UserProfile } from '../identity/identity.service'
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import { AUDIT_EVENT_TYPES, isAuditEventType } from './audit-event-types';
-import type { ListAuditEventsQuery } from './dto/list-audit-events.query';
+import type { ListAuditEventsQuery } from './dto/list-audit-events.dto';
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -66,7 +66,7 @@ function pageSize(limit: string | undefined): number {
   return size;
 }
 
-function instant(value: string | undefined): Date | undefined {
+function parseInstant(value: string | undefined): Date | undefined {
   return value === undefined ? undefined : new Date(value);
 }
 
@@ -103,15 +103,12 @@ export class AuditQuery {
   private async list(
     query: ListAuditEventsQuery,
     tenantId: string | null,
-    run: (where: Prisma.AuditEventWhereInput, take: number) => Promise<AuditEvent[]>,
+    findPage: (where: Prisma.AuditEventWhereInput, take: number) => Promise<AuditEvent[]>,
   ): Promise<AuditEventPage> {
     const limit = pageSize(query.limit);
-    const from = instant(query.from);
-    const to = instant(query.to);
+    const from = parseInstant(query.from);
+    const to = parseInstant(query.to);
     if (from && to && from >= to) throw new BadRequestException('from must be earlier than to');
-    if (query.eventType !== undefined && !isAuditEventType(query.eventType)) {
-      throw new BadRequestException('eventType is not a known event type');
-    }
 
     const conditions: Prisma.AuditEventWhereInput[] = [];
     if (query.user !== undefined) {
@@ -126,7 +123,7 @@ export class AuditQuery {
       });
     }
     // One row more than the page, to tell whether another page follows.
-    const rows = await run(
+    const rows = await findPage(
       { tenantId, createdAt: { gte: from, lt: to }, eventType: query.eventType, applicationId: query.applicationId, AND: conditions },
       limit + 1,
     );

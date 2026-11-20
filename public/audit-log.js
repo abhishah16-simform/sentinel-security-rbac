@@ -5,6 +5,7 @@
   const rows = document.getElementById('rows');
   const more = document.getElementById('more');
   let nextCursor = null;
+  let lastQuery = '';
   let shown = 0;
 
   function block(title, text, showLink) {
@@ -24,7 +25,8 @@
     return date.toISOString();
   }
 
-  function query(cursor) {
+  // The current filters as a query string, without a cursor.
+  function filterQuery() {
     const data = new FormData(filters);
     const params = new URLSearchParams();
     const from = toIso(data.get('from'), false);
@@ -35,7 +37,6 @@
       const value = String(data.get(name) || '').trim();
       if (value) params.set(name, value);
     });
-    if (cursor) params.set('cursor', cursor);
     return params.toString();
   }
 
@@ -121,7 +122,8 @@
   }
 
   async function search() {
-    show(await Sentinel.api('/v1/audit-events?' + query(null)), false);
+    lastQuery = filterQuery();
+    show(await Sentinel.api('/v1/audit-events?' + lastQuery), false);
   }
 
   handleForm(filters, message, search);
@@ -137,7 +139,10 @@
     more.disabled = true;
     more.setAttribute('aria-busy', 'true');
     try {
-      show(await Sentinel.api('/v1/audit-events?' + query(nextCursor)), true);
+      // The filters that produced the cursor, not whatever the form holds now.
+      const params = new URLSearchParams(lastQuery);
+      params.set('cursor', nextCursor);
+      show(await Sentinel.api('/v1/audit-events?' + params.toString()), true);
     } catch (error) {
       showMessage(message, error.message, 'error');
     } finally {

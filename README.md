@@ -105,6 +105,7 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - `audit_events` is the one table whose `tenantId` may be null (platform entries). RLS shows a Tenant's entries in its context, and platform entries only when no Tenant context is set. A trigger rejects `UPDATE`, `DELETE` and `TRUNCATE`.
 - Tenant Admins: `GET /v1/audit-events` (filters `from`, `to` (exclusive), `user` (ID or email, as actor or target), `eventType`, `applicationId`; paginated with `limit` and `cursor`), `GET /v1/audit-events/types` and `GET /v1/audit-events/integrity`, which reports the first broken link, if any. The console page is `/audit-log.html`.
 - Platform Admins: `GET /v1/platform/audit-events` and `GET /v1/platform/audit-events/integrity` for the platform chain.
+- The chain proves entries weren't changed, removed or inserted by anyone who can't also rewrite `audit_chain_heads`. A database superuser who rewinds the head after deleting the newest entries goes undetected; anchoring head hashes outside the database (in a signed export, say) would close that.
 - [`http/audit.http`](http/audit.http) walks through it, including how to tamper with an entry to see the check fail.
 
 ## Commands
