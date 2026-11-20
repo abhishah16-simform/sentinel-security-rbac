@@ -49,7 +49,7 @@ function sameHash(a: string, b: string): boolean {
 
 /**
  * 6-digit email codes. A code is stored hashed, lasts 10 minutes, works once and allows at most
- * 5 wrong guesses. Every wrong guess also counts towards locking the account, and checks for one
+ * 5 wrong attempts. Every wrong attempt also counts towards locking the account, and checks for one
  * User run one at a time (Lockout.guard).
  */
 @Injectable()
@@ -142,7 +142,7 @@ export class EmailChallenges {
 
   /**
    * Checks a code and, if it is right, marks the challenge used and runs onValid in the same
-   * transaction. A wrong code costs one of the code's 5 guesses and counts towards lockout.
+   * transaction. A wrong code costs one of the code's 5 attempts and counts towards lockout.
    * Every refused attempt is audited. Throws 429 while the User is locked or another check for
    * them is running, and BadRequestException otherwise.
    */
@@ -187,12 +187,12 @@ export class EmailChallenges {
       case 'expired':
         throw new BadRequestException('This code has expired. Ask for a new one.');
       case 'exhausted':
-        throw new BadRequestException('Too many wrong guesses at this code. Ask for a new one.');
+        throw new BadRequestException('Too many wrong attempts at this code. Ask for a new one.');
       case 'wrong':
         if (result.lockedUntil) throw new AccountLockedException(result.lockedUntil);
         throw new BadRequestException(
           result.attemptsLeft > 0
-            ? `That code is wrong. ${result.attemptsLeft} ${result.attemptsLeft === 1 ? 'guess' : 'guesses'} left.`
+            ? `That code is wrong. ${result.attemptsLeft} ${result.attemptsLeft === 1 ? 'attempt' : 'attempts'} left.`
             : 'That code is wrong, and it no longer works. Ask for a new one.',
         );
       case 'valid':
