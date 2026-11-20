@@ -1,5 +1,4 @@
-// One database role owns the tables, runs migrations and is used by the app (DATABASE_URL).
-// Every Tenant table must use FORCE ROW LEVEL SECURITY; see docs/adr/0003-single-database-role.md.
+// The app and migrations both connect as the postgres user (DATABASE_URL).
 
 generator client {
   provider = "prisma-client-js"

@@ -1,0 +1,23 @@
+src/cron/cron.service.spec.ts(13,10): error TS2554: Expected 17 arguments, but got 16.
+src/modules/admin-assurance/admin-assurance.service.spec.ts(23,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/admin-partners/reason-code-enforcement.spec.ts(153,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/admin-provider-registry/admin-provider-merge.contract.spec.ts(26,16): error TS2554: Expected 13 arguments, but got 12.
+src/modules/admin-provider-registry/admin-provider-merge.contract.spec.ts(299,7): error TS2554: Expected 8 arguments, but got 9.
+src/modules/admin-provider-registry/reason-code-enforcement.spec.ts(166,7): error TS2554: Expected 8 arguments, but got 9.
+src/modules/admin-provider-registry/reason-code-enforcement.spec.ts(186,12): error TS2554: Expected 13 arguments, but got 12.
+src/modules/admin-provider-registry/reason-code-enforcement.spec.ts(286,21): error TS2554: Expected 13 arguments, but got 12.
+src/modules/admin-provider-registry/reason-code-enforcement.spec.ts(76,7): error TS2554: Expected 8 arguments, but got 9.
+src/modules/contract-builder/contract-builder-all-locations.spec.ts(18,19): error TS2554: Expected 9 arguments, but got 5.
+src/modules/partner-assurance-evidence/partner-assurance-evidence.contract.spec.ts(14,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/partner-assurance-evidence/partner-assurance-evidence.provenance.spec.ts(16,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/partner-claim/unclaimed-invariant.spec.ts(50,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/partner-claim/unclaimed-invariant.spec.ts(51,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/partner-intake/logging-redaction.spec.ts(76,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/partner-intake/logging-redaction.spec.ts(77,5): error TS2322: Type 'string | boolean' is not assignable to type 'boolean'.
+src/modules/provider-rates/provider-rates.rate-card-import-queue.spec.ts(67,5): error TS2554: Expected 12 arguments, but got 14.
+src/modules/switch-board/switch-board.service.spec.ts(30,21): error TS2554: Expected 6 arguments, but got 5.
+test/provider-rates/rate-version-isolation.spec.ts(139,21): error TS2554: Expected 12 arguments, but got 10.
+test/provider-rates/upload-csv.spec.ts(273,21): error TS2554: Expected 12 arguments, but got 10.
+test/provider-rates/upload-csv.spec.ts(330,21): error TS2554: Expected 12 arguments, but got 10.
+test/provider-rates/upload-csv.spec.ts(376,19): error TS2554: Expected 12 arguments, but got 10.
+test/provider-rates/upload-csv.spec.ts(414,19): error TS2554: Expected 12 arguments, but got 10.

@@ -9,23 +9,20 @@ A multi-tenant authorization and security compliance service. See [CONTEXT.md](C
 
 ## Local setup
 
-These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker instead, use `npm run db:up` (port 5433, user and password `sentinel`) and point `DATABASE_URL` there.
+These steps use a **local PostgreSQL** on port 5432, connecting as the `postgres` user. To run Postgres in Docker instead, use `npm run db:up` (port 5433, password `postgres`) and point `DATABASE_URL` there.
 
-1. Create the database and its role (run once, as the `postgres` superuser). Pick your own password:
+1. Create the database (run once):
 
    ```bash
-   sudo -u postgres psql -v db_name=sentinel -v db_user=sentinel \
-     -v db_password='CHANGE_ME' -f db/create-db.sql
+   sudo -u postgres createdb sentinel
    ```
 
-   You can also connect as `postgres` directly. The app will start, but it logs a warning, because Row-Level Security never applies to a superuser.
-
-2. Create a `.env` file in the project root:
+2. Create a `.env` file in the project root, using your `postgres` password:
 
    ```bash
    cat > .env <<'ENV'
    PORT=3000
-   DATABASE_URL=postgresql://sentinel:CHANGE_ME@localhost:5432/sentinel
+   DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/sentinel
    ENV
    ```
 
@@ -95,9 +92,6 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 | `npm run prisma:deploy` | Apply existing migrations (deployment) |
 | `npm run keys:generate` | Create the access-token signing key at `keys/jwt-private.pem` |
 
-## Database role
+## Database user
 
-Sentinel uses one Postgres role for everything: it owns the tables, runs migrations and is what the app connects as ([ADR 0003](docs/adr/0003-single-database-role.md)).
-
-- Every Tenant table's migration must run both `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`; without `FORCE`, RLS doesn't apply to the table's owner.
-- The role must not be a superuser or have `BYPASSRLS`, because RLS never applies to those. The app logs a warning at startup if it is connected as such a role.
+The app and migrations both connect as the `postgres` user. Because `postgres` is a superuser, Postgres never applies Row-Level Security to it, so the app logs a warning at startup.

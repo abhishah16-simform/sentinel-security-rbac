@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Write(.env*)",
+      "Edit(.env*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Write(prisma/migrations/**)",
+      "Edit(prisma/migrations/**)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/tsc-baseline-check.sh",
+            "timeout": 180,
+            "statusMessage": "Checking for new TypeScript errors (tsc --noEmit)..."
+          }
+        ]
+      }
+    ]
+  }
+}
