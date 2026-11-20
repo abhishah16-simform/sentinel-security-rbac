@@ -22,11 +22,17 @@ model User {
   /// argon2id hash in PHC string format.
   passwordHash    String
   emailVerifiedAt DateTime?
+  /// Set while email-code MFA is on.
+  mfaEnabledAt    DateTime?
+  /// Logins and codes are refused until this time after too many failures; see Lockout.
+  lockedUntil     DateTime?
   isPlatformAdmin Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   emailVerificationTokens EmailVerificationToken[]
+  emailChallenges         EmailChallenge[]
+  authFailures            AuthFailure[]
   refreshChains           RefreshChain[]
   memberships             Membership[]
 
@@ -46,6 +52,49 @@ model EmailVerificationToken {
 
   @@index([userId])
   @@map("email_verification_tokens")
+}
+
+enum EmailChallengePurpose {
+  MFA_LOGIN
+  MFA_DISABLE
+  PASSWORD_RESET
+}
+
+/// A short-lived email challenge: a 6-digit code sent by email, optionally bound to an opaque
+/// token the client holds (MFA login, password reset). Only hashes of the code and token are stored.
+model EmailChallenge {
+  id            String                @id @default(uuid()) @db.Uuid
+  userId        String                @db.Uuid
+  purpose       EmailChallengePurpose
+  tokenHash     String?               @unique
+  /// The challenge (and its token) stops working at this time.
+  expiresAt     DateTime
+  /// SHA-256 of "<id>:<code>"; null until a code has been sent.
+  codeHash      String?
+  codeExpiresAt DateTime?
+  /// Wrong guesses at the current code. The code stops working after 5.
+  codeAttempts  Int                   @default(0)
+  usedAt        DateTime?
+  createdAt     DateTime              @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("email_challenges")
+}
+
+/// One wrong password or code, counted towards locking the account.
+model AuthFailure {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  /// "password" or "code".
+  kind      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("auth_failures")
 }
 
 // ---------------------------------------------------------------------------

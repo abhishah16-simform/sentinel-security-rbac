@@ -1,0 +1,64 @@
+# Email-code MFA, lockout and password reset (ticket 05). Codes and links land in Mailpit:
+# http://localhost:8025. Log in first with http/auth.http for the Bearer token.
+
+@baseUrl = http://localhost:3000
+@accessToken = paste-access-token
+@email = you@example.com
+@password = your-password
+@mfaToken = paste-mfaToken-from-login
+@code = 123456
+@resetToken = paste-token-from-reset-link
+
+### Turn MFA on (verified email required). Returns your profile with mfaEnabled: true.
+POST {{baseUrl}}/v1/me/mfa
+Authorization: Bearer {{accessToken}}
+
+### Log in. With MFA on the answer is { mfaRequired: true, mfaToken, expiresIn } and a code is emailed.
+POST {{baseUrl}}/v1/auth/login
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+### Second step: the code. Returns tokens and sets the refresh cookie, like a normal login.
+POST {{baseUrl}}/v1/auth/login/mfa
+Content-Type: application/json
+
+{ "mfaToken": "{{mfaToken}}", "code": "{{code}}" }
+
+### Email a new code for the same login attempt
+POST {{baseUrl}}/v1/auth/login/mfa/resend
+Content-Type: application/json
+
+{ "mfaToken": "{{mfaToken}}" }
+
+### Turning MFA off needs a current code: ask for one...
+POST {{baseUrl}}/v1/me/mfa/disable-code
+Authorization: Bearer {{accessToken}}
+
+### ...then send it
+POST {{baseUrl}}/v1/me/mfa/disable
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "code": "{{code}}" }
+
+# Lockout: 5 wrong passwords or codes within 15 minutes and login answers 429 for 15 minutes,
+# even with the right password. Send the login above with a wrong password 5 times to see it.
+
+### Password reset 1/3: email a reset link (same answer for unknown emails)
+POST {{baseUrl}}/v1/auth/password-reset
+Content-Type: application/json
+
+{ "email": "{{email}}" }
+
+### 2/3: with the token from the link (after #token=), email a fresh code
+POST {{baseUrl}}/v1/auth/password-reset/code
+Content-Type: application/json
+
+{ "token": "{{resetToken}}" }
+
+### 3/3: token, code and new password. Every refresh token the User holds stops working.
+POST {{baseUrl}}/v1/auth/password-reset/complete
+Content-Type: application/json
+
+{ "token": "{{resetToken}}", "code": "{{code}}", "password": "a brand new password" }

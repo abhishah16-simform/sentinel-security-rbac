@@ -19,7 +19,16 @@
             <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="••••••••••••" /></label>
             <button type="submit">Log in</button>
           </form>
+          <form id="mfa-form" class="form" hidden>
+            <p class="hint">We emailed you a 6-digit code. It expires in 10 minutes.</p>
+            <label>Code
+              <input name="code" inputmode="numeric" autocomplete="one-time-code" required pattern="\d{6}" maxlength="6" placeholder="123456" />
+            </label>
+            <button type="submit">Verify and log in</button>
+            <button type="button" class="ghost" id="resend-code">Email me a new code</button>
+          </form>
           <p id="message" class="message" role="alert" hidden></p>
+          <p class="links"><a href="/forgot-password.html">Forgot your password?</a></p>
           <p class="links">New to SENTINEL? <a href="/signup.html">Create an account</a></p>
         </div>
         <p class="auth-legal">Protected by SENTINEL · Tenant data is isolated with row-level security</p>
@@ -31,15 +40,52 @@
     <script src="/session.js"></script>
     <script>
       (function () {
-        handleForm(document.getElementById('login-form'), document.getElementById('message'), async function (data) {
-          await Sentinel.login(data.get('email'), data.get('password'));
-          // One Tenant: go straight into it. Several: let the User pick. None: home offers to create one.
+        const message = document.getElementById('message');
+        const loginForm = document.getElementById('login-form');
+        const mfaForm = document.getElementById('mfa-form');
+        let mfaToken = null;
+
+        // One Tenant: go straight into it. Several: let the User pick. None: home offers to create one.
+        async function enter() {
           const tenants = (await Sentinel.api('/v1/tenants')).items;
           if (tenants.length === 1) {
             await Sentinel.switchTenant(tenants[0].tenantId);
             window.location.href = '/';
           } else {
             window.location.href = tenants.length > 1 ? '/tenants.html' : '/';
+          }
+        }
+
+        handleForm(loginForm, message, async function (data) {
+          const pending = await Sentinel.login(data.get('email'), data.get('password'));
+          if (!pending) return enter();
+          mfaToken = pending.mfaToken;
+          loginForm.hidden = true;
+          mfaForm.hidden = false;
+          mfaForm.elements.code.focus();
+        });
+
+        handleForm(mfaForm, message, async function (data) {
+          try {
+            await Sentinel.completeMfa(mfaToken, data.get('code'));
+          } catch (error) {
+            // 401: this login attempt expired, so start again from the password.
+            if (error.status === 401) {
+              mfaForm.reset();
+              mfaForm.hidden = true;
+              loginForm.hidden = false;
+            }
+            throw error;
+          }
+          await enter();
+        });
+
+        document.getElementById('resend-code').addEventListener('click', async function () {
+          try {
+            const body = await Sentinel.postJson('/v1/auth/login/mfa/resend', { mfaToken: mfaToken });
+            showMessage(message, body.message, 'success');
+          } catch (error) {
+            showMessage(message, error.message, 'error');
           }
         });
       })();

@@ -96,6 +96,71 @@
     showMessage(message, 'Your name is saved.', 'success');
   });
 
+  // Two-step verification card. Turning it off needs a code we email first.
+  const mfaOffForm = document.getElementById('mfa-off-form');
+  const mfaEnable = document.getElementById('mfa-enable');
+  const mfaDisable = document.getElementById('mfa-disable');
+
+  function showMfa(me) {
+    const status = document.getElementById('mfa-status');
+    status.textContent = me.mfaEnabled ? 'On' : 'Off';
+    status.className = 'badge ' + (me.mfaEnabled ? 'ok' : 'warn');
+    mfaEnable.hidden = me.mfaEnabled;
+    mfaEnable.disabled = !me.emailVerified;
+    mfaDisable.hidden = !me.mfaEnabled;
+    mfaOffForm.hidden = true;
+    document.getElementById('mfa-footer').hidden = false;
+    document.getElementById('mfa-hint').textContent = me.mfaEnabled
+      ? 'A stolen password alone can no longer get into your account.'
+      : me.emailVerified
+        ? 'Recommended: a stolen password alone then isn\'t enough.'
+        : 'Verify your email before turning this on.';
+  }
+
+  async function mfaAction(button, action) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    try {
+      await action();
+    } catch (error) {
+      showMessage(message, error.message, 'error');
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+  }
+
+  mfaEnable.addEventListener('click', function () {
+    mfaAction(mfaEnable, async function () {
+      showMfa(await Sentinel.api('/v1/me/mfa', { method: 'POST' }));
+      showMessage(message, 'Two-step verification is on. Your next login will ask for a code.', 'success');
+    });
+  });
+  mfaDisable.addEventListener('click', function () {
+    mfaAction(mfaDisable, async function () {
+      const body = await Sentinel.api('/v1/me/mfa/disable-code', { method: 'POST' });
+      showMessage(message, body.message, 'success');
+      document.getElementById('mfa-footer').hidden = true;
+      mfaOffForm.hidden = false;
+      mfaOffForm.elements.code.focus();
+    });
+  });
+  document.getElementById('mfa-cancel').addEventListener('click', function () {
+    mfaOffForm.reset();
+    mfaOffForm.hidden = true;
+    document.getElementById('mfa-footer').hidden = false;
+  });
+  handleForm(mfaOffForm, message, async function (data) {
+    const me = await Sentinel.api('/v1/me/mfa/disable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: data.get('code') }),
+    });
+    mfaOffForm.reset();
+    showMfa(me);
+    showMessage(message, 'Two-step verification is off.', 'success');
+  });
+
   async function showAccount() {
     if (!(await Sentinel.resume())) {
       showLoggedOut();
@@ -103,6 +168,7 @@
     }
     const me = await Sentinel.api('/v1/me');
     showName(me);
+    showMfa(me);
     document.getElementById('me-email').textContent = me.email;
     document.getElementById('me-id').textContent = me.id;
     document.getElementById('me-type').textContent = me.isPlatformAdmin ? 'Platform Admin' : 'Standard';

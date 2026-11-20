@@ -56,13 +56,14 @@ export class RefreshTokenService {
     private readonly audit: AuditLog,
   ) {}
 
-  /** Starts a new chain for a fresh login and returns its first token. Records the login. */
-  async startChain(userId: string): Promise<IssuedRefreshToken> {
-    return this.prisma.$transaction(async (tx) => {
-      const chain = await tx.refreshChain.create({ data: { userId } });
-      await this.audit.recordIn(tx, sessionEvent(chain, null, 'auth.login_succeeded'));
-      return this.issueInChain(tx, chain.id);
-    });
+  /**
+   * Starts a new chain for a completed login inside the caller's transaction and returns its first
+   * token. Records the login, noting whether an MFA code was checked.
+   */
+  async startChainIn(tx: Prisma.TransactionClient, userId: string, mfa: boolean): Promise<IssuedRefreshToken> {
+    const chain = await tx.refreshChain.create({ data: { userId } });
+    await this.audit.recordIn(tx, sessionEvent(chain, null, 'auth.login_succeeded', { mfa }));
+    return this.issueInChain(tx, chain.id);
   }
 
   /**
@@ -150,10 +151,18 @@ export class RefreshTokenService {
     });
   }
 
+  /**
+   * Revokes every chain the User holds inside the caller's transaction, without an audit entry of
+   * its own (the caller records why). Returns how many were still live.
+   */
+  revokeAllIn(tx: Prisma.TransactionClient, userId: string): Promise<number> {
+    return this.revokeChains(tx, { userId }, new Date());
+  }
+
   /** Revokes every chain the User holds (log out everywhere). Recorded in the platform chain. */
   async revokeAllForUser(userId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const revoked = await this.revokeChains(tx, { userId }, new Date());
+      const revoked = await this.revokeAllIn(tx, userId);
       await this.audit.recordIn(tx, {
         tenantId: null,
         eventType: 'auth.logged_out_everywhere',

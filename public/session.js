@@ -103,8 +103,15 @@
         });
       }));
     },
+    // Resolves null when logged in, or { mfaToken } when an emailed code is needed (completeMfa).
     async login(email, password) {
-      useTokens(await postJson('/v1/auth/login', { email: email, password: password }));
+      const body = await postJson('/v1/auth/login', { email: email, password: password });
+      if (body.mfaRequired) return { mfaToken: body.mfaToken };
+      useTokens(body);
+      return null;
+    },
+    async completeMfa(mfaToken, code) {
+      useTokens(await postJson('/v1/auth/login/mfa', { mfaToken: mfaToken, code: code }));
     },
     // Restores the session from the refresh cookie. Resolves false when not logged in.
     async resume() {

@@ -78,6 +78,15 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - Applications verify access tokens with the public key at `/.well-known/jwks.json`. The key ID (`kid`) is the key's RFC 7638 thumbprint, so a new key always gets a new ID.
 - [`http/auth.http`](http/auth.http) walks through the whole flow.
 
+## MFA, lockout and password reset
+
+- **MFA** is a 6-digit code emailed after the password. `POST /v1/me/mfa` turns it on (verified email required). Turning it off takes a current code: `POST /v1/me/mfa/disable-code`, then `POST /v1/me/mfa/disable` with `{ code }`.
+- With MFA on, `POST /v1/auth/login` answers `{ mfaRequired: true, mfaToken, expiresIn }` instead of tokens. `POST /v1/auth/login/mfa` with `{ mfaToken, code }` finishes the login; `POST /v1/auth/login/mfa/resend` emails a new code.
+- **Codes** are stored as SHA-256 hashes salted with their challenge ID, last 10 minutes, work once and allow 5 wrong guesses. A new code replaces the previous one.
+- **Lockout**: wrong passwords and codes are counted per User in `auth_failures`. The 5th within 15 minutes sets `users.lockedUntil` 15 minutes ahead, and login and code entry answer 429 until then. Only a completed login (or a password reset) clears the count, so a correct password alone can't reset it between code guesses.
+- **Password reset**: `POST /v1/auth/password-reset` emails a link that works for an hour. The page it opens asks for a fresh code (`POST /v1/auth/password-reset/code`), then `POST /v1/auth/password-reset/complete` with `{ token, code, password }` sets the password and revokes every refresh token the User holds, in one transaction.
+- All of it is recorded in the platform audit chain. Pages: the login page's code step, the Two-step verification card on the overview page, `/forgot-password.html` and `/reset-password.html`. [`http/mfa-reset.http`](http/mfa-reset.http) walks through it.
+
 ## Tenants and isolation
 
 - `POST /v1/tenants` creates a Tenant; the caller becomes its first Tenant Admin. Only Users with a verified email may.

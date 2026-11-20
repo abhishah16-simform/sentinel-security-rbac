@@ -107,6 +107,30 @@
                   <button id="resend" type="button" class="secondary small" hidden>Resend verification email</button>
                 </div>
               </section>
+
+              <section class="card" id="security" aria-labelledby="mfa-title">
+                <div class="card-header">
+                  <div>
+                    <h2 id="mfa-title">Two-step verification</h2>
+                    <p>After your password, enter a 6-digit code we email you.</p>
+                  </div>
+                  <span id="mfa-status" class="badge"></span>
+                </div>
+                <form id="mfa-off-form" class="form inline-form" hidden>
+                  <label>Code from your email
+                    <input name="code" inputmode="numeric" autocomplete="one-time-code" required pattern="\d{6}" maxlength="6" placeholder="123456" />
+                  </label>
+                  <div class="actions">
+                    <button id="mfa-cancel" type="button" class="secondary">Cancel</button>
+                    <button type="submit" class="danger">Turn off</button>
+                  </div>
+                </form>
+                <div class="card-footer" id="mfa-footer">
+                  <span class="hint" id="mfa-hint"></span>
+                  <button id="mfa-enable" type="button" class="small" hidden><i data-icon="shieldCheck"></i>Turn on</button>
+                  <button id="mfa-disable" type="button" class="secondary small" hidden>Turn off</button>
+                </div>
+              </section>
             </div>
 
             <div class="stack">

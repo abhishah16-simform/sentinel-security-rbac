@@ -7,7 +7,9 @@ import { isUniqueConstraintError } from '../common/prisma-errors';
 import type { Env } from '../config/env';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { ScopedTransaction } from '../prisma/scoped-prisma';
 import { normalizeEmail } from './email';
+import { Lockout } from './lockout';
 import { PasswordHasher } from './password-hasher';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -19,6 +21,7 @@ export interface UserProfile {
   readonly firstName: string;
   readonly lastName: string;
   readonly emailVerified: boolean;
+  readonly mfaEnabled: boolean;
   readonly isPlatformAdmin: boolean;
 }
 
@@ -32,7 +35,8 @@ export interface SignupInput {
 /** The outcome of checking an email and password. */
 export type CredentialCheck =
   | { readonly kind: 'valid'; readonly user: UserProfile }
-  | { readonly kind: 'wrong-password'; readonly userId: string }
+  | { readonly kind: 'wrong-password'; readonly userId: string; readonly lockedUntil: Date | null }
+  | { readonly kind: 'locked'; readonly userId: string; readonly lockedUntil: Date }
   | { readonly kind: 'unknown-email' };
 
 export interface ProfileChanges {
@@ -47,6 +51,7 @@ function toProfile(user: User): UserProfile {
     firstName: user.firstName,
     lastName: user.lastName,
     emailVerified: user.emailVerifiedAt !== null,
+    mfaEnabled: user.mfaEnabledAt !== null,
     isPlatformAdmin: user.isPlatformAdmin,
   };
 }
@@ -61,6 +66,7 @@ export class IdentityService {
     private readonly passwords: PasswordHasher,
     private readonly mail: MailService,
     private readonly audit: AuditLog,
+    private readonly lockout: Lockout,
     config: ConfigService<Env, true>,
   ) {
     this.appUrl = config.get('APP_URL', { infer: true });
@@ -138,8 +144,10 @@ export class IdentityService {
   }
 
   /**
-   * Checks an email and password. Takes similar time whether or not the email has an account. The
-   * kind of failure is for the Audit Log only: callers must not tell the client which it was.
+   * Checks an email and password. Takes similar time whether or not the email has an account.
+   * A locked account isn't checked at all, and a wrong password counts towards lockout. Apart from
+   * a lock, the kind of failure is for the Audit Log only: callers must not tell the client.
+   * A valid password doesn't clear earlier failures: only a completed login does (completeLogin).
    */
   async checkCredentials(rawEmail: string, password: string): Promise<CredentialCheck> {
     const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(rawEmail) } });
@@ -147,9 +155,16 @@ export class IdentityService {
       await this.passwords.verifyAgainstDummy(password);
       return { kind: 'unknown-email' };
     }
-    return (await this.passwords.verify(user.passwordHash, password))
-      ? { kind: 'valid', user: toProfile(user) }
-      : { kind: 'wrong-password', userId: user.id };
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      return { kind: 'locked', userId: user.id, lockedUntil: user.lockedUntil };
+    }
+    if (await this.passwords.verify(user.passwordHash, password)) return { kind: 'valid', user: toProfile(user) };
+    return { kind: 'wrong-password', userId: user.id, lockedUntil: await this.lockout.recordFailure(user.id, 'password') };
+  }
+
+  /** Marks a login complete (after the password, and the code if MFA is on): clears failures. */
+  async completeLogin(tx: ScopedTransaction, userId: string): Promise<void> {
+    await this.lockout.clearFailures(tx, userId);
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
