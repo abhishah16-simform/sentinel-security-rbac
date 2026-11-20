@@ -11,7 +11,7 @@
   }
 
   aside.innerHTML =
-    '<a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>Sentinel</a>' +
+    '<a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>SENTINEL</a>' +
     '<div class="auth-pitch">' +
     '<span class="eyebrow"><b>New</b>Multi-tenant access control</span>' +
     '<h2>Authorization your auditors will <em>actually love</em>.</h2>' +
@@ -21,6 +21,6 @@
     feature('key', 'Roles and permissions', 'Grant exactly the access each person needs, nothing more.') +
     feature('clipboardCheck', 'Compliance ready', 'Audit log, access reviews, alerts and compliance reports.') +
     '</ul></div>' +
-    '<div class="auth-footnote"><span>© Sentinel</span><span>Row-level Tenant isolation</span><span>Argon2id password hashing</span></div>';
+    '<div class="auth-footnote"><span>© SENTINEL</span><span>Row-level Tenant isolation</span><span>Argon2id password hashing</span></div>';
   Icons.hydrate(aside);
 })();

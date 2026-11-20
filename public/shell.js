@@ -19,7 +19,7 @@
   }
 
   sidebar.innerHTML =
-    '<a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>Sentinel</a>' +
+    '<a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>SENTINEL</a>' +
     '<a class="workspace none" id="workspace" href="/tenants.html" title="Switch Tenant">' +
     '<span class="workspace-avatar" id="workspace-avatar">–</span>' +
     '<span class="workspace-text"><small>Tenant</small><span id="workspace-name">No Tenant selected</span></span>' +
