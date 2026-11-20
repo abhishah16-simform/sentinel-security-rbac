@@ -37,12 +37,13 @@ export class RefreshTokenService {
   async rotate(token: string): Promise<RotationResult> {
     const tokenHash = hashOpaqueToken(token);
     const result = await this.prisma.$transaction(async (tx): Promise<RotationResult> => {
-      const found = await tx.refreshToken.findUnique({ where: { tokenHash }, select: { chainId: true } });
-      if (!found) return { kind: 'rejected' };
+      const tokenChain = await tx.refreshToken.findUnique({ where: { tokenHash }, select: { chainId: true } });
+      if (!tokenChain) return { kind: 'rejected' };
 
       // Lock the chain so rotation, reuse detection and logout of one login are serialized.
-      await tx.$executeRaw`SELECT 1 FROM refresh_chains WHERE id = ${found.chainId}::uuid FOR UPDATE`;
-      const chain = await tx.refreshChain.findUnique({ where: { id: found.chainId } });
+      await tx.$executeRaw`SELECT 1 FROM refresh_chains WHERE id = ${tokenChain.chainId}::uuid FOR UPDATE`;
+      const chain = await tx.refreshChain.findUnique({ where: { id: tokenChain.chainId } });
+      // Re-read the token now that the chain is locked, so its state can't change under us.
       const current = await tx.refreshToken.findUnique({ where: { tokenHash } });
       if (!chain || !current || chain.revokedAt !== null) return { kind: 'rejected' };
 

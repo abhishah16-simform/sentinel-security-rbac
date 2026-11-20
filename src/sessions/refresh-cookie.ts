@@ -5,7 +5,7 @@ export const REFRESH_COOKIE_NAME = 'sentinel_refresh';
 /** The cookie is only ever sent to the refresh endpoint (which also handles logout via DELETE). */
 export const REFRESH_COOKIE_PATH = '/v1/auth/refresh';
 
-const baseOptions: CookieOptions = {
+const REFRESH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: true,
   sameSite: 'strict',
@@ -13,11 +13,11 @@ const baseOptions: CookieOptions = {
 };
 
 export function setRefreshCookie(res: Response, refreshToken: IssuedRefreshToken): void {
-  res.cookie(REFRESH_COOKIE_NAME, refreshToken.token, { ...baseOptions, expires: refreshToken.expiresAt });
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken.token, { ...REFRESH_COOKIE_OPTIONS, expires: refreshToken.expiresAt });
 }
 
 export function clearRefreshCookie(res: Response): void {
-  res.clearCookie(REFRESH_COOKIE_NAME, baseOptions);
+  res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
 }
 
 export function readRefreshCookie(req: Request): string | undefined {

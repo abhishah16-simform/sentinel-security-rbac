@@ -70,7 +70,7 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 | `SMTP_HOST` / `SMTP_PORT` | `localhost` / `1025` | SMTP server (Mailpit in development) |
 | `SMTP_USER` / `SMTP_PASSWORD` | none | SMTP credentials, if the server needs them |
 | `MAIL_FROM` | `Sentinel <no-reply@sentinel.local>` | Sender of Sentinel's emails |
-| `CORS_ALLOWED_ORIGINS` | none | Comma-separated origins allowed to call the API from a browser, such as an Application's login page |
+| `CORS_ALLOWED_ORIGINS` | none | Comma-separated origins allowed to call the API from a browser, such as an Application's login page. Temporary until Applications register their own origins (ticket 07) |
 
 ## Logging in and sessions
 

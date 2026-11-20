@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import type { AccessTokenClaims } from './access-token.service';
 import { AccessTokenGuard, CurrentClaims } from './access-token.guard';
+import type { AccessTokenClaims } from './access-token.service';
 import { LoginDto } from './dto/login.dto';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './refresh-cookie';
 import { SessionsService, type SessionTokens } from './sessions.service';

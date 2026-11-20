@@ -1,7 +1,7 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { IdentityService, type UserProfile } from '../identity/identity.service';
-import type { AccessTokenClaims } from './access-token.service';
 import { AccessTokenGuard, CurrentClaims } from './access-token.guard';
+import type { AccessTokenClaims } from './access-token.service';
 
 /** The logged-in User's own profile. */
 @Controller('me')

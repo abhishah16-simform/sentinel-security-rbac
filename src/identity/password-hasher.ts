@@ -23,9 +23,8 @@ export class PasswordHasher {
    * Spends the same time as a real check when there is no User to check against, so that
    * login response times don't reveal which emails have accounts.
    */
-  async verifyAgainstDummy(password: string): Promise<false> {
+  async verifyAgainstDummy(password: string): Promise<void> {
     this.dummyHash ??= this.hash('sentinel-dummy-password-for-timing');
     await this.verify(await this.dummyHash, password);
-    return false;
   }
 }

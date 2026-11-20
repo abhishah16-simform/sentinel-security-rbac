@@ -1,10 +1,10 @@
 import { IsString, MaxLength } from 'class-validator';
-import { PASSWORD_MAX_LENGTH } from '../../identity/dto/signup.dto';
+import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../identity/credential-limits';
 
 /** No password-policy checks here: a login attempt must not reveal the policy. */
 export class LoginDto {
   @IsString()
-  @MaxLength(254)
+  @MaxLength(EMAIL_MAX_LENGTH)
   email!: string;
 
   @IsString()

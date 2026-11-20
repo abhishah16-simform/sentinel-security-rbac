@@ -13,7 +13,8 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('v1', { exclude: [JWKS_PATH] });
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
-  // Applications log Users in by calling the API directly from their own origin.
+  // Applications log Users in by calling the API directly from their own origin. A fixed list from
+  // config for now; ticket 07 replaces it with each registered Application's allowed origins.
   app.enableCors({ origin: [...config.get('CORS_ALLOWED_ORIGINS', { infer: true })], credentials: true });
   app.enableShutdownHooks();
 

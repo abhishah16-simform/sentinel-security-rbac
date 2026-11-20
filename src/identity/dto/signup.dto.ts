@@ -1,12 +1,9 @@
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
-
-export const PASSWORD_MIN_LENGTH = 12;
-/** argon2 hashes any length, but a cap stops huge inputs being used to burn CPU. */
-export const PASSWORD_MAX_LENGTH = 128;
+import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../credential-limits';
 
 export class SignupDto {
   @IsEmail()
-  @MaxLength(254)
+  @MaxLength(EMAIL_MAX_LENGTH)
   email!: string;
 
   @IsString()

@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { calculateJwkThumbprint, exportJWK, type JWK } from 'jose';
