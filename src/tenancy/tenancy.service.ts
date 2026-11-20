@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Membership, Tenant } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { IdentityService } from '../identity/identity.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma, setTenantContext } from '../prisma/scoped-prisma';
@@ -18,7 +18,9 @@ export interface ActiveTenantRef {
   readonly membershipId: string;
 }
 
-function toTenantMembership(membership: Membership & { tenant: Tenant }): TenantMembership {
+type MembershipWithTenant = Prisma.MembershipGetPayload<{ include: { tenant: true } }>;
+
+function toTenantMembership(membership: MembershipWithTenant): TenantMembership {
   return {
     tenantId: membership.tenantId,
     tenantName: membership.tenant.name,

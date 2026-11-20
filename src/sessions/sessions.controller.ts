@@ -18,6 +18,25 @@ function respondWithTokens(res: Response, tokens: SessionTokens): AccessTokenRes
   return { accessToken: tokens.accessToken, tokenType: 'Bearer', expiresIn: tokens.expiresIn };
 }
 
+/**
+ * Uses the refresh-token cookie to get new tokens and sets the replacement cookie. A rejected
+ * refresh token is cleared from the browser.
+ */
+async function withRefreshCookie(
+  req: Request,
+  res: Response,
+  issue: (refreshToken: string) => Promise<SessionTokens>,
+): Promise<AccessTokenResponse> {
+  const refreshToken = readRefreshCookie(req);
+  if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
+  try {
+    return respondWithTokens(res, await issue(refreshToken));
+  } catch (error: unknown) {
+    if (error instanceof UnauthorizedException) clearRefreshCookie(res);
+    throw error;
+  }
+}
+
 @Controller('auth')
 export class SessionsController {
   constructor(private readonly sessions: SessionsService) {}
@@ -31,15 +50,8 @@ export class SessionsController {
   /** Silent refresh: swaps the refresh-token cookie for a new one and a new access token. */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AccessTokenResponse> {
-    const refreshToken = readRefreshCookie(req);
-    if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
-    try {
-      return respondWithTokens(res, await this.sessions.refresh(refreshToken));
-    } catch (error: unknown) {
-      if (error instanceof UnauthorizedException) clearRefreshCookie(res);
-      throw error;
-    }
+  refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AccessTokenResponse> {
+    return withRefreshCookie(req, res, (refreshToken) => this.sessions.refresh(refreshToken));
   }
 
   /**
@@ -48,19 +60,12 @@ export class SessionsController {
    */
   @Put('refresh/active-tenant')
   @HttpCode(HttpStatus.OK)
-  async switchTenant(
+  switchTenant(
     @Req() req: Request,
     @Body() body: SwitchTenantDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AccessTokenResponse> {
-    const refreshToken = readRefreshCookie(req);
-    if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
-    try {
-      return respondWithTokens(res, await this.sessions.switchTenant(refreshToken, body.tenantId));
-    } catch (error: unknown) {
-      if (error instanceof UnauthorizedException) clearRefreshCookie(res);
-      throw error;
-    }
+    return withRefreshCookie(req, res, (refreshToken) => this.sessions.switchTenant(refreshToken, body.tenantId));
   }
 
   /** Log out: revokes the refresh token in the cookie (and the rest of its login's chain). */

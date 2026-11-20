@@ -1,10 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, RefreshChain } from '@prisma/client';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
 
 export const REFRESH_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** A chain's Active Tenant, or null unless both the Tenant and the Membership are set. */
+function activeTenantOf(chain: RefreshChain): ActiveTenantRef | null {
+  return chain.activeTenantId !== null && chain.activeMembershipId !== null
+    ? { tenantId: chain.activeTenantId, membershipId: chain.activeMembershipId }
+    : null;
+}
 
 export interface IssuedRefreshToken {
   readonly token: string;
@@ -40,10 +47,14 @@ export class RefreshTokenService {
     });
   }
 
-  /** The User a refresh token was issued to, without using it. Null for unknown tokens. */
-  async ownerOf(token: string): Promise<string | null> {
-    const found = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash: hashOpaqueToken(token) },
+  /**
+   * The User a refresh token belongs to, if the token is usable right now (unused, unexpired,
+   * chain not revoked), without using it. Null otherwise; callers must then still call rotate()
+   * so that a reused token revokes its chain.
+   */
+  async ownerOfUsable(token: string): Promise<string | null> {
+    const found = await this.prisma.refreshToken.findFirst({
+      where: { tokenHash: hashOpaqueToken(token), usedAt: null, expiresAt: { gt: new Date() }, chain: { revokedAt: null } },
       select: { chain: { select: { userId: true } } },
     });
     return found?.chain.userId ?? null;
@@ -74,18 +85,18 @@ export class RefreshTokenService {
       if (current.expiresAt <= now) return { kind: 'rejected' };
 
       await tx.refreshToken.update({ where: { id: current.id }, data: { usedAt: now } });
-      let active: ActiveTenantRef | null =
-        chain.activeTenantId !== null && chain.activeMembershipId !== null
-          ? { tenantId: chain.activeTenantId, membershipId: chain.activeMembershipId }
-          : null;
-      if (switchTo) {
+      const activeTenant = switchTo ?? activeTenantOf(chain);
+      const changed =
+        chain.activeTenantId !== (activeTenant?.tenantId ?? null) ||
+        chain.activeMembershipId !== (activeTenant?.membershipId ?? null);
+      if (changed) {
+        // Switching, or clearing a Tenant whose Membership was deleted (the FK nulled only the Membership).
         await tx.refreshChain.update({
           where: { id: chain.id },
-          data: { activeTenantId: switchTo.tenantId, activeMembershipId: switchTo.membershipId },
+          data: { activeTenantId: activeTenant?.tenantId ?? null, activeMembershipId: activeTenant?.membershipId ?? null },
         });
-        active = switchTo;
       }
-      return { kind: 'rotated', userId: chain.userId, activeTenant: active, next: await this.issueInChain(tx, chain.id) };
+      return { kind: 'rotated', userId: chain.userId, activeTenant, next: await this.issueInChain(tx, chain.id) };
     });
 
     if (result.kind === 'reused') {

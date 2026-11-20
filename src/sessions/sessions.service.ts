@@ -1,8 +1,8 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ACCESS_TOKEN_TTL_SECONDS, AccessTokenService } from '../access-token/access-token.service';
 import { IdentityService } from '../identity/identity.service';
 import { type ActiveTenantRef, TenancyService } from '../tenancy/tenancy.service';
-import { ACCESS_TOKEN_TTL_SECONDS, AccessTokenService } from '../access-token/access-token.service';
-import { type IssuedRefreshToken, RefreshTokenService } from './refresh-token.service';
+import { type IssuedRefreshToken, RefreshTokenService, type RotationResult } from './refresh-token.service';
 
 export interface SessionTokens {
   readonly accessToken: string;
@@ -29,9 +29,7 @@ export class SessionsService {
   }
 
   async refresh(refreshToken: string): Promise<SessionTokens> {
-    const result = await this.refreshTokens.rotate(refreshToken);
-    if (result.kind !== 'rotated') throw new UnauthorizedException('Invalid or expired refresh token');
-    return this.withAccessToken(result.userId, result.activeTenant, result.next);
+    return this.toSessionTokens(await this.refreshTokens.rotate(refreshToken));
   }
 
   /**
@@ -39,17 +37,17 @@ export class SessionsService {
    * in the same chain that carry the Tenant and Membership. The User must belong to the Tenant.
    */
   async switchTenant(refreshToken: string, tenantId: string): Promise<SessionTokens> {
-    const userId = await this.refreshTokens.ownerOf(refreshToken);
-    if (!userId) throw new UnauthorizedException('Invalid or expired refresh token');
+    const userId = await this.refreshTokens.ownerOfUsable(refreshToken);
+    if (!userId) {
+      // Still go through rotation so that a reused token revokes its chain; it never succeeds here.
+      return this.toSessionTokens(await this.refreshTokens.rotate(refreshToken));
+    }
     const membership = await this.tenancy.findMembership(userId, tenantId);
     if (!membership) throw new ForbiddenException('You are not a member of that Tenant.');
 
-    const result = await this.refreshTokens.rotate(refreshToken, {
-      tenantId: membership.tenantId,
-      membershipId: membership.membershipId,
-    });
-    if (result.kind !== 'rotated') throw new UnauthorizedException('Invalid or expired refresh token');
-    return this.withAccessToken(result.userId, result.activeTenant, result.next);
+    return this.toSessionTokens(
+      await this.refreshTokens.rotate(refreshToken, { tenantId: membership.tenantId, membershipId: membership.membershipId }),
+    );
   }
 
   logout(refreshToken: string): Promise<void> {
@@ -58,6 +56,11 @@ export class SessionsService {
 
   logoutEverywhere(userId: string): Promise<void> {
     return this.refreshTokens.revokeAllForUser(userId);
+  }
+
+  private toSessionTokens(result: RotationResult): Promise<SessionTokens> {
+    if (result.kind !== 'rotated') throw new UnauthorizedException('Invalid or expired refresh token');
+    return this.withAccessToken(result.userId, result.activeTenant, result.next);
   }
 
   private async withAccessToken(

@@ -9,6 +9,11 @@ export async function setTenantContext(tx: ScopedTransaction, tenantId: string):
   await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
 }
 
+/** Sets the User whose own rows user-scoped policies let this transaction see. */
+async function setUserContext(tx: ScopedTransaction, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
+}
+
 /**
  * Runs database work under a Row-Level Security context. Each call is one transaction whose
  * first statement sets the context with set_config(..., true), the function form of SET LOCAL,
@@ -33,7 +38,7 @@ export class ScopedPrisma {
    */
   asUser<T>(userId: string, work: (tx: ScopedTransaction) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
+      await setUserContext(tx, userId);
       return work(tx);
     });
   }

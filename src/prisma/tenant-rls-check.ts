@@ -2,14 +2,14 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 
 interface TenantTableRls {
-  table: string;
-  enabled: boolean;
-  forced: boolean;
-  hasPolicy: boolean;
+  readonly table: string;
+  readonly enabled: boolean;
+  readonly forced: boolean;
+  readonly hasPolicy: boolean;
 }
 
 /** A Tenant-owned table is any table in the app's schema with a tenantId column. */
-export const TENANT_ID_COLUMN = 'tenantId';
+const TENANT_ID_COLUMN = 'tenantId';
 
 /**
  * Warns at startup about any Tenant-owned table whose RLS is incomplete. Every such table needs
@@ -27,7 +27,11 @@ export class TenantRlsCheck implements OnApplicationBootstrap {
       SELECT c.relname AS "table",
              c.relrowsecurity AS "enabled",
              c.relforcerowsecurity AS "forced",
-             EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid) AS "hasPolicy"
+             EXISTS (
+               SELECT 1 FROM pg_policy p
+                WHERE p.polrelid = c.oid
+                  AND pg_get_expr(p.polqual, p.polrelid) LIKE '%' || quote_ident(${TENANT_ID_COLUMN}) || '%'
+             ) AS "hasPolicy"
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = current_schema()
@@ -42,7 +46,7 @@ export class TenantRlsCheck implements OnApplicationBootstrap {
       const missing = [
         enabled ? null : 'ENABLE ROW LEVEL SECURITY',
         forced ? null : 'FORCE ROW LEVEL SECURITY',
-        hasPolicy ? null : 'a policy',
+        hasPolicy ? null : `a policy on ${TENANT_ID_COLUMN}`,
       ].filter((item): item is string => item !== null);
       if (missing.length > 0) {
         problems += 1;
