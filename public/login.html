@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log in · Sentinel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Log in</h1>
+      <p class="subtitle">Sentinel</p>
+      <form id="login-form" class="form">
+        <label>Email <input name="email" type="email" autocomplete="username" required maxlength="254" /></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="128" /></label>
+        <button type="submit">Log in</button>
+      </form>
+      <p id="message" class="message" role="alert" hidden></p>
+      <p class="links">New to Sentinel? <a href="/signup.html">Create an account</a></p>
+    </main>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script>
+      (function () {
+        handleForm(document.getElementById('login-form'), document.getElementById('message'), async function (data) {
+          await Sentinel.login(data.get('email'), data.get('password'));
+          window.location.href = '/';
+        });
+      })();
+    </script>
+  </body>
+</html>

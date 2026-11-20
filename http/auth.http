@@ -1,0 +1,57 @@
+# Signup, email verification, login and sessions (ticket 02).
+# Works with the VS Code REST Client or JetBrains HTTP Client.
+#
+# The refresh token travels in an HttpOnly cookie scoped to /v1/auth/refresh. If your client
+# doesn't keep Secure cookies over plain http://localhost, copy the sentinel_refresh value from
+# the login response's Set-Cookie header into @refreshToken and uncomment the Cookie headers.
+
+@baseUrl = http://localhost:3000
+@email = alice@example.com
+@password = correct horse battery
+@refreshToken = paste-from-set-cookie
+
+### Public keys for verifying access tokens (Applications cache this)
+GET {{baseUrl}}/.well-known/jwks.json
+
+### 1. Sign up. Always 202, whether or not the email already has an account.
+POST {{baseUrl}}/v1/auth/signup
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+### 2. Verify the email. Copy the token from the link in Mailpit (http://localhost:8025),
+###    the part after "#token=". Each token works once.
+POST {{baseUrl}}/v1/auth/verify-email
+Content-Type: application/json
+
+{ "token": "paste-token-from-email" }
+
+### Ask for a new verification link
+POST {{baseUrl}}/v1/auth/resend-verification
+Content-Type: application/json
+
+{ "email": "{{email}}" }
+
+### 3. Log in. Returns the access token; sets the refresh-token cookie.
+# @name login
+POST {{baseUrl}}/v1/auth/login
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+### 4. Who am I? (Bearer access token, valid 10 minutes)
+GET {{baseUrl}}/v1/me
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 5. Silent refresh. Each refresh token works once and is replaced by a new cookie.
+###    Sending an already-used token again revokes every refresh token from that login.
+POST {{baseUrl}}/v1/auth/refresh
+# Cookie: sentinel_refresh={{refreshToken}}
+
+### 6. Log out on this device (revokes the refresh token in the cookie)
+DELETE {{baseUrl}}/v1/auth/refresh
+# Cookie: sentinel_refresh={{refreshToken}}
+
+### 7. Log out everywhere (revokes all of the User's refresh tokens)
+POST {{baseUrl}}/v1/auth/logout-all
+Authorization: Bearer {{login.response.body.accessToken}}

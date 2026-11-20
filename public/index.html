@@ -10,6 +10,27 @@
     <main class="card">
       <h1>Sentinel</h1>
       <p class="subtitle">Authorization and security compliance service</p>
+
+      <section id="account" aria-live="polite">
+        <h2>Account</h2>
+        <p id="account-loading">Checking your session…</p>
+        <div id="logged-out" hidden>
+          <p class="links"><a href="/login.html">Log in</a> · <a href="/signup.html">Sign up</a></p>
+        </div>
+        <div id="logged-in" hidden>
+          <ul class="status">
+            <li><span>Email</span><span id="me-email"></span></li>
+            <li><span>Email verified</span><span id="me-verified"></span></li>
+          </ul>
+          <button id="resend" type="button" class="secondary" hidden>Resend verification email</button>
+          <div class="actions">
+            <button id="logout" type="button">Log out</button>
+            <button id="logout-all" type="button" class="secondary">Log out everywhere</button>
+          </div>
+        </div>
+        <p id="message" class="message" role="status" hidden></p>
+      </section>
+
       <section aria-live="polite">
         <h2>System status</h2>
         <ul id="status" class="status">
@@ -17,6 +38,8 @@
         </ul>
       </section>
     </main>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

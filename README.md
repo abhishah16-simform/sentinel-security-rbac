@@ -29,16 +29,23 @@ These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker i
    ENV
    ```
 
-3. Start the Mailpit mail catcher (inbox at <http://localhost:8025>):
+3. Generate the RSA key that signs access tokens. It is written to `keys/jwt-private.pem` (git-ignored), where the app looks by default:
+
+   ```bash
+   npm run keys:generate
+   ```
+
+4. Start the Mailpit mail catcher (inbox at <http://localhost:8025>):
 
    ```bash
    npm run mail:up
    ```
 
-4. Install dependencies and start the app:
+5. Install dependencies, apply migrations and start the app:
 
    ```bash
    npm install
+   npm run prisma:deploy
    npm run start:dev
    ```
 
@@ -48,7 +55,31 @@ These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker i
    export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
    ```
 
-5. Open <http://localhost:3000> for the status page, or <http://localhost:3000/v1/health> for the JSON health check.
+6. Open <http://localhost:3000> to sign up and log in, or <http://localhost:3000/v1/health> for the JSON health check. Verification emails land in Mailpit.
+
+## Configuration
+
+Only `DATABASE_URL` is required. Everything else has a local-development default.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `PORT` | `3000` | HTTP port |
+| `DATABASE_URL` | none | Postgres connection string |
+| `APP_URL` | `http://localhost:$PORT` | Public base URL, used for links in emails |
+| `JWT_PRIVATE_KEY_FILE` | `keys/jwt-private.pem` | PEM RSA private key (2048 bits or more) that signs access tokens |
+| `SMTP_HOST` / `SMTP_PORT` | `localhost` / `1025` | SMTP server (Mailpit in development) |
+| `SMTP_USER` / `SMTP_PASSWORD` | none | SMTP credentials, if the server needs them |
+| `MAIL_FROM` | `Sentinel <no-reply@sentinel.local>` | Sender of Sentinel's emails |
+| `CORS_ALLOWED_ORIGINS` | none | Comma-separated origins allowed to call the API from a browser, such as an Application's login page |
+
+## Logging in and sessions
+
+- `POST /v1/auth/signup`, `POST /v1/auth/verify-email` and `POST /v1/auth/resend-verification` handle signup and email verification. Passwords are hashed with argon2id.
+- `POST /v1/auth/login` returns a 10-minute RS256 access token in the body and sets the refresh token in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie whose path is `/v1/auth/refresh`, so the browser sends it nowhere else.
+- `POST /v1/auth/refresh` swaps the cookie for a new refresh token and a new access token. Each refresh token works once. Presenting one that was already used revokes every refresh token from that login.
+- `DELETE /v1/auth/refresh` logs out on this device. `POST /v1/auth/logout-all` (Bearer token) logs out everywhere.
+- Applications verify access tokens with the public key at `/.well-known/jwks.json`. The key ID (`kid`) is the key's RFC 7638 thumbprint, so a new key always gets a new ID.
+- [`http/auth.http`](http/auth.http) walks through the whole flow.
 
 ## Commands
 
@@ -62,6 +93,7 @@ These steps use a **local PostgreSQL** on port 5432. To run Postgres in Docker i
 | `npm run typecheck` | Typecheck with `tsc --noEmit` |
 | `npm run prisma:migrate` | Create a migration file and apply it (development) |
 | `npm run prisma:deploy` | Apply existing migrations (deployment) |
+| `npm run keys:generate` | Create the access-token signing key at `keys/jwt-private.pem` |
 
 ## Database role
 

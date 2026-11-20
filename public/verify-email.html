@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verify email · Sentinel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Verify your email</h1>
+      <p id="message" class="message" role="status" aria-live="polite">Checking your link…</p>
+      <form id="resend-form" class="form" hidden>
+        <label>Email <input name="email" type="email" autocomplete="email" required maxlength="254" /></label>
+        <button type="submit">Send a new link</button>
+      </form>
+      <p class="links"><a href="/login.html">Log in</a> · <a href="/">Home</a></p>
+    </main>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script>
+      (function () {
+        const message = document.getElementById('message');
+        const resendForm = document.getElementById('resend-form');
+        const token = new URLSearchParams(window.location.hash.slice(1)).get('token');
+        // Drop the token from the address bar and history once it has been read.
+        history.replaceState(null, '', window.location.pathname);
+
+        function offerResend(text) {
+          showMessage(message, text, 'error');
+          resendForm.hidden = false;
+        }
+
+        handleForm(resendForm, message, async function (data) {
+          const body = await Sentinel.postJson('/v1/auth/resend-verification', { email: data.get('email') });
+          resendForm.hidden = true;
+          showMessage(message, body.message, 'success');
+        });
+
+        if (!token) {
+          offerResend('This page needs the link from your verification email.');
+          return;
+        }
+        Sentinel.postJson('/v1/auth/verify-email', { token: token })
+          .then(function (body) {
+            showMessage(message, body.message + ' You can now log in.', 'success');
+          })
+          .catch(function (error) {
+            offerResend(error.message);
+          });
+      })();
+    </script>
+  </body>
+</html>

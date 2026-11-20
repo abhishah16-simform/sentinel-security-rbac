@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign up · Sentinel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Create your account</h1>
+      <p class="subtitle">One Sentinel login for every Tenant you belong to.</p>
+      <form id="signup-form" class="form">
+        <label>Email <input name="email" type="email" autocomplete="email" required maxlength="254" /></label>
+        <label>
+          Password
+          <input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128" />
+          <span class="hint">At least 12 characters.</span>
+        </label>
+        <button type="submit">Sign up</button>
+      </form>
+      <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+      <p class="links">Already have an account? <a href="/login.html">Log in</a></p>
+    </main>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script>
+      (function () {
+        const form = document.getElementById('signup-form');
+        const message = document.getElementById('message');
+        handleForm(form, message, async function (data) {
+          const body = await Sentinel.postJson('/v1/auth/signup', {
+            email: data.get('email'),
+            password: data.get('password'),
+          });
+          form.reset();
+          showMessage(message, body.message, 'success');
+        });
+      })();
+    </script>
+  </body>
+</html>

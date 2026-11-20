@@ -9,3 +9,74 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// ---------------------------------------------------------------------------
+// Identity (platform-level: no tenantId, no RLS)
+// ---------------------------------------------------------------------------
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  /// Stored lower-cased and trimmed; see normalizeEmail().
+  email           String    @unique
+  /// argon2id hash in PHC string format.
+  passwordHash    String
+  emailVerifiedAt DateTime?
+  isPlatformAdmin Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  emailVerificationTokens EmailVerificationToken[]
+  refreshChains           RefreshChain[]
+
+  @@map("users")
+}
+
+/// A single-use email verification link. Only the SHA-256 hash of the token is stored.
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Sessions (platform-level: no tenantId, no RLS)
+// ---------------------------------------------------------------------------
+
+/// One login. Every refresh token issued from that login belongs to its chain;
+/// revoking the chain ends the login on that device.
+model RefreshChain {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokens RefreshToken[]
+
+  @@index([userId])
+  @@map("refresh_chains")
+}
+
+/// An opaque refresh token. Only its SHA-256 hash is stored. It works once:
+/// using it sets usedAt and issues the next token in the same chain.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  chainId   String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  chain RefreshChain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  @@index([chainId])
+  @@map("refresh_tokens")
+}
