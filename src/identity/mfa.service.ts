@@ -1,9 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { AuditLog } from '../audit/audit-log.service';
+import { AuditLog, userEvent } from '../audit/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ScopedTransaction } from '../prisma/scoped-prisma';
 import { CODE_TTL_MS, EmailChallenges } from './email-challenges';
 import { Lockout } from './lockout';
+
+/**
+ * How long one MFA login attempt lasts. Longer than a code (10 minutes), so a resent code still
+ * gets its full lifetime.
+ */
+const MFA_LOGIN_TTL_MS = 30 * 60 * 1000;
 
 export interface MfaChallenge {
   /** Sent back with the code to finish logging in. */
@@ -30,12 +36,7 @@ export class MfaService {
     if (user.mfaEnabledAt !== null) return;
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { mfaEnabledAt: new Date() } });
-      await this.audit.recordIn(tx, {
-        tenantId: null,
-        eventType: 'user.mfa_enabled',
-        actorUserId: userId,
-        target: { type: 'user', id: userId },
-      });
+      await this.audit.recordIn(tx, userEvent(userId, userId, 'user.mfa_enabled'));
     });
   }
 
@@ -53,24 +54,19 @@ export class MfaService {
     if (!challenge) throw new BadRequestException('Ask for a code first.');
     await this.challenges.verify(challenge, code, async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { mfaEnabledAt: null } });
-      await this.audit.recordIn(tx, {
-        tenantId: null,
-        eventType: 'user.mfa_disabled',
-        actorUserId: userId,
-        target: { type: 'user', id: userId },
-      });
+      await this.audit.recordIn(tx, userEvent(userId, userId, 'user.mfa_disabled'));
     });
   }
 
   /** After a correct password: emails a login code and returns the token that goes with it. */
   async startLogin(userId: string): Promise<MfaChallenge> {
-    const { challenge, token } = await this.challenges.start(userId, 'MFA_LOGIN', { withToken: true, ttlMs: CODE_TTL_MS });
+    const { challenge, token } = await this.challenges.start(userId, 'MFA_LOGIN', { withToken: true, ttlMs: MFA_LOGIN_TTL_MS });
     if (token === null) throw new Error('An MFA login challenge must have a token');
     await this.challenges.sendCode(challenge);
-    return { mfaToken: token, expiresIn: CODE_TTL_MS / 1000 };
+    return { mfaToken: token, expiresIn: MFA_LOGIN_TTL_MS / 1000 };
   }
 
-  /** Emails a new login code for the same login attempt. */
+  /** Emails a new login code for the same login attempt (at most once a minute). */
   async resendLoginCode(mfaToken: string): Promise<void> {
     const challenge = await this.challenges.findByToken(mfaToken, 'MFA_LOGIN');
     if (!challenge) throw new UnauthorizedException('This login attempt has expired. Log in again.');

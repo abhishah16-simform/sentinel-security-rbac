@@ -72,6 +72,8 @@ model EmailChallenge {
   /// SHA-256 of "<id>:<code>"; null until a code has been sent.
   codeHash      String?
   codeExpiresAt DateTime?
+  /// When the current code was emailed; resends wait a minute after it.
+  codeSentAt    DateTime?
   /// Wrong guesses at the current code. The code stops working after 5.
   codeAttempts  Int                   @default(0)
   usedAt        DateTime?

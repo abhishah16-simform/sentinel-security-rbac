@@ -24,6 +24,19 @@ export interface AuditEventInput {
   readonly payload?: AuditPayload;
 }
 
+/**
+ * A platform-chain entry about one User, such as a login, MFA or password change. The actor is
+ * whoever acted: usually the User, null when nobody known did (a lock, a reset request).
+ */
+export function userEvent(
+  actorUserId: string | null,
+  userId: string,
+  eventType: AuditEventType,
+  payload?: AuditPayload,
+): AuditEventInput {
+  return { tenantId: null, eventType, actorUserId, target: { type: 'user', id: userId }, payload };
+}
+
 interface ChainHead {
   readonly seq: number;
   readonly hash: string;

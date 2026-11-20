@@ -37,6 +37,8 @@ export type CredentialCheck =
   | { readonly kind: 'valid'; readonly user: UserProfile }
   | { readonly kind: 'wrong-password'; readonly userId: string; readonly lockedUntil: Date | null }
   | { readonly kind: 'locked'; readonly userId: string; readonly lockedUntil: Date }
+  /** Another password or code check for the account was still running; nothing was checked. */
+  | { readonly kind: 'busy'; readonly userId: string }
   | { readonly kind: 'unknown-email' };
 
 export interface ProfileChanges {
@@ -145,8 +147,9 @@ export class IdentityService {
 
   /**
    * Checks an email and password. Takes similar time whether or not the email has an account.
-   * A locked account isn't checked at all, and a wrong password counts towards lockout. Apart from
-   * a lock, the kind of failure is for the Audit Log only: callers must not tell the client.
+   * The check runs under Lockout.guard: a locked account, or one with another check running, isn't
+   * checked at all, and a wrong password counts towards lockout. Apart from those two, the kind of
+   * failure is for the Audit Log only: callers must not tell the client.
    * A valid password doesn't clear earlier failures: only a completed login does (completeLogin).
    */
   async checkCredentials(rawEmail: string, password: string): Promise<CredentialCheck> {
@@ -155,11 +158,14 @@ export class IdentityService {
       await this.passwords.verifyAgainstDummy(password);
       return { kind: 'unknown-email' };
     }
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      return { kind: 'locked', userId: user.id, lockedUntil: user.lockedUntil };
-    }
-    if (await this.passwords.verify(user.passwordHash, password)) return { kind: 'valid', user: toProfile(user) };
-    return { kind: 'wrong-password', userId: user.id, lockedUntil: await this.lockout.recordFailure(user.id, 'password') };
+    const guarded = await this.lockout.guard(user.id, async (tx): Promise<CredentialCheck> => {
+      if (await this.passwords.verify(user.passwordHash, password)) return { kind: 'valid', user: toProfile(user) };
+      const lockedUntil = await this.lockout.recordFailureIn(tx, user.id, 'password');
+      return { kind: 'wrong-password', userId: user.id, lockedUntil };
+    });
+    if (guarded.kind === 'busy') return { kind: 'busy', userId: user.id };
+    if (guarded.kind === 'locked') return { kind: 'locked', userId: user.id, lockedUntil: guarded.lockedUntil };
+    return guarded.result;
   }
 
   /** Marks a login complete (after the password, and the code if MFA is on): clears failures. */

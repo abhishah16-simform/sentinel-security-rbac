@@ -3,7 +3,7 @@ import { ACCESS_TOKEN_TTL_SECONDS, AccessTokenService } from '../access-token/ac
 import { AuditLog } from '../audit/audit-log.service';
 import { normalizeEmail } from '../identity/email';
 import { IdentityService } from '../identity/identity.service';
-import { AccountLockedException } from '../identity/lockout';
+import { AccountLockedException, AttemptInProgressException } from '../identity/lockout';
 import { type MfaChallenge, MfaService } from '../identity/mfa.service';
 import { PasswordResetService } from '../identity/password-reset.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -47,7 +47,8 @@ export class SessionsService {
         target: userId === null ? undefined : { type: 'user', id: userId },
         payload: { email: normalizeEmail(email), reason: check.kind === 'locked' ? 'account-locked' : check.kind },
       });
-      // Only the account's own lock is revealed; any other failure looks the same to the client.
+      // Only a lock (or a check already running) is revealed; any other failure looks the same.
+      if (check.kind === 'busy') throw new AttemptInProgressException();
       if (check.kind !== 'unknown-email' && check.lockedUntil) throw new AccountLockedException(check.lockedUntil);
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -56,7 +57,7 @@ export class SessionsService {
     if (user.mfaEnabled) return { kind: 'mfa-required', challenge: await this.mfa.startLogin(user.id) };
     const refreshToken = await this.prisma.$transaction(async (tx) => {
       await this.identity.completeLogin(tx, user.id);
-      return this.refreshTokens.startChainIn(tx, user.id, false);
+      return this.refreshTokens.startChainIn(tx, user.id, { mfa: false });
     });
     return { kind: 'tokens', tokens: await this.withAccessToken(user.id, null, refreshToken) };
   }
@@ -64,13 +65,9 @@ export class SessionsService {
   /** The second step of an MFA login: the emailed code for the token login returned. */
   async completeMfaLogin(mfaToken: string, code: string): Promise<SessionTokens> {
     const session = await this.mfa.completeLogin(mfaToken, code, (tx, userId) =>
-      this.refreshTokens.startChainIn(tx, userId, true).then((token) => ({ userId, token })),
+      this.refreshTokens.startChainIn(tx, userId, { mfa: true }).then((token) => ({ userId, token })),
     );
     return this.withAccessToken(session.userId, null, session.token);
-  }
-
-  resendMfaCode(mfaToken: string): Promise<void> {
-    return this.mfa.resendLoginCode(mfaToken);
   }
 
   /** Sets a new password from a reset link and code, and logs the User out everywhere. */

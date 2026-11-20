@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EmailChallenge } from '@prisma/client';
-import { AuditLog } from '../audit/audit-log.service';
+import { AuditLog, userEvent } from '../audit/audit-log.service';
 import type { Env } from '../config/env';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +20,7 @@ export const RESET_LINK_TTL_MS = 60 * 60 * 1000;
  */
 @Injectable()
 export class PasswordResetService {
+  private readonly logger = new Logger(PasswordResetService.name);
   private readonly appUrl: string;
 
   constructor(
@@ -34,17 +35,22 @@ export class PasswordResetService {
     this.appUrl = config.get('APP_URL', { infer: true });
   }
 
+  /**
+   * Starts request() without waiting for it, so the response takes the same time whether or not
+   * the email has an account (sending mail is slow). Failures are logged.
+   */
+  requestInBackground(rawEmail: string): void {
+    this.request(rawEmail).catch((error: unknown) => {
+      this.logger.error(`Password reset request failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
   /** Emails a reset link. Silent for unknown emails, so it can't reveal which have accounts. */
   async request(rawEmail: string): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(rawEmail) } });
     if (!user) return;
     const { token } = await this.challenges.start(user.id, 'PASSWORD_RESET', { withToken: true, ttlMs: RESET_LINK_TTL_MS });
-    await this.audit.record({
-      tenantId: null,
-      eventType: 'user.password_reset_requested',
-      actorUserId: null,
-      target: { type: 'user', id: user.id },
-    });
+    await this.audit.record(userEvent(null, user.id, 'user.password_reset_requested'));
     // The token travels in the URL fragment, so it never reaches server logs or Referer headers.
     await this.mail.send({
       to: user.email,
@@ -75,13 +81,7 @@ export class PasswordResetService {
       await tx.user.update({ where: { id: userId }, data: { passwordHash } });
       await this.lockout.clearFailures(tx, userId);
       const revokedSessions = await revokeSessions(tx, userId);
-      await this.audit.recordIn(tx, {
-        tenantId: null,
-        eventType: 'user.password_reset',
-        actorUserId: userId,
-        target: { type: 'user', id: userId },
-        payload: { revokedSessions },
-      });
+      await this.audit.recordIn(tx, userEvent(userId, userId, 'user.password_reset', { revokedSessions }));
     });
   }
 

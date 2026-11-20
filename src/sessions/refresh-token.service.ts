@@ -4,6 +4,7 @@ import type { AuditEventType } from '../audit/audit-event-types';
 import { type AuditEventInput, AuditLog, type AuditPayload } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { PrismaService } from '../prisma/prisma.service';
+import type { ScopedTransaction } from '../prisma/scoped-prisma';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
 
 export const REFRESH_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
@@ -60,7 +61,11 @@ export class RefreshTokenService {
    * Starts a new chain for a completed login inside the caller's transaction and returns its first
    * token. Records the login, noting whether an MFA code was checked.
    */
-  async startChainIn(tx: Prisma.TransactionClient, userId: string, mfa: boolean): Promise<IssuedRefreshToken> {
+  async startChainIn(
+    tx: ScopedTransaction,
+    userId: string,
+    { mfa }: { readonly mfa: boolean },
+  ): Promise<IssuedRefreshToken> {
     const chain = await tx.refreshChain.create({ data: { userId } });
     await this.audit.recordIn(tx, sessionEvent(chain, null, 'auth.login_succeeded', { mfa }));
     return this.issueInChain(tx, chain.id);
@@ -155,7 +160,7 @@ export class RefreshTokenService {
    * Revokes every chain the User holds inside the caller's transaction, without an audit entry of
    * its own (the caller records why). Returns how many were still live.
    */
-  revokeAllIn(tx: Prisma.TransactionClient, userId: string): Promise<number> {
+  revokeAllIn(tx: ScopedTransaction, userId: string): Promise<number> {
     return this.revokeChains(tx, { userId }, new Date());
   }
 
@@ -173,7 +178,7 @@ export class RefreshTokenService {
     });
   }
 
-  private async issueInChain(tx: Prisma.TransactionClient, chainId: string): Promise<IssuedRefreshToken> {
+  private async issueInChain(tx: ScopedTransaction, chainId: string): Promise<IssuedRefreshToken> {
     const token = generateOpaqueToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
     await tx.refreshToken.create({ data: { chainId, tokenHash: hashOpaqueToken(token), expiresAt } });
@@ -181,7 +186,7 @@ export class RefreshTokenService {
   }
 
   private async revokeChains(
-    tx: Prisma.TransactionClient,
+    tx: ScopedTransaction,
     where: Prisma.RefreshChainWhereInput,
     now: Date,
   ): Promise<number> {

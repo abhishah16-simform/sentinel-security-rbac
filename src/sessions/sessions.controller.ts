@@ -9,6 +9,7 @@ import {
   RequestPasswordResetDto,
   ResendMfaCodeDto,
 } from '../identity/dto/email-code.dto';
+import { MfaService } from '../identity/mfa.service';
 import { PasswordResetService } from '../identity/password-reset.service';
 import { LoginDto } from './dto/login.dto';
 import { SwitchTenantDto } from './dto/switch-tenant.dto';
@@ -60,6 +61,7 @@ async function withRefreshCookie(
 export class SessionsController {
   constructor(
     private readonly sessions: SessionsService,
+    private readonly mfa: MfaService,
     private readonly passwordReset: PasswordResetService,
   ) {}
 
@@ -85,15 +87,15 @@ export class SessionsController {
   @Post('login/mfa/resend')
   @HttpCode(HttpStatus.ACCEPTED)
   async resendMfaCode(@Body() body: ResendMfaCodeDto): Promise<MessageResponse> {
-    await this.sessions.resendMfaCode(body.mfaToken);
+    await this.mfa.resendLoginCode(body.mfaToken);
     return { message: 'A new code is on its way.' };
   }
 
   /** Step 1 of a password reset: email a reset link. Same answer whether or not the email has an account. */
   @Post('password-reset')
   @HttpCode(HttpStatus.ACCEPTED)
-  async requestPasswordReset(@Body() body: RequestPasswordResetDto): Promise<MessageResponse> {
-    await this.passwordReset.request(body.email);
+  requestPasswordReset(@Body() body: RequestPasswordResetDto): MessageResponse {
+    this.passwordReset.requestInBackground(body.email);
     return { message: 'If that address has an account, a reset link is on its way.' };
   }
 

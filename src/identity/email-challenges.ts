@@ -1,15 +1,18 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { EmailChallenge, EmailChallengePurpose } from '@prisma/client';
-import { AuditLog } from '../audit/audit-log.service';
+import { AuditLog, userEvent } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ScopedTransaction } from '../prisma/scoped-prisma';
-import { AccountLockedException, Lockout } from './lockout';
+import { AccountLockedException, Lockout, unwrapGuarded } from './lockout';
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
+/** A new code can be emailed at most once a minute per challenge. */
+export const RESEND_COOLDOWN_MS = 60 * 1000;
+const CODE_TTL_MINUTES = CODE_TTL_MS / 60_000;
 
 /** What each kind of code is for, as the email and the Audit Log put it. */
 const PURPOSES: Readonly<Record<EmailChallengePurpose, { readonly audit: string; readonly subject: string; readonly action: string }>> = {
@@ -29,7 +32,7 @@ type CodeOutcome<T> =
   | { readonly kind: 'invalid' }
   | { readonly kind: 'expired' }
   | { readonly kind: 'exhausted' }
-  | { readonly kind: 'wrong'; readonly attemptsLeft: number };
+  | { readonly kind: 'wrong'; readonly attemptsLeft: number; readonly lockedUntil: Date | null };
 
 function generateCode(): string {
   return randomInt(0, 1_000_000).toString().padStart(6, '0');
@@ -46,7 +49,8 @@ function sameHash(a: string, b: string): boolean {
 
 /**
  * 6-digit email codes. A code is stored hashed, lasts 10 minutes, works once and allows at most
- * 5 wrong guesses. Every wrong guess also counts towards locking the account.
+ * 5 wrong guesses. Every wrong guess also counts towards locking the account, and checks for one
+ * User run one at a time (Lockout.guard).
  */
 @Injectable()
 export class EmailChallenges {
@@ -94,47 +98,60 @@ export class EmailChallenges {
     });
   }
 
-  /** Emails a fresh code for the challenge. Any earlier code stops working, and its guesses reset. */
+  /**
+   * Emails a fresh code for the challenge; any earlier code stops working. Refused while the
+   * account is locked and within a minute of the previous code, so resends can't flood an inbox.
+   */
   async sendCode(challenge: EmailChallenge): Promise<void> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: challenge.userId }, select: { email: true } });
+    const lockedUntil = await this.lockout.lockedUntil(challenge.userId);
+    if (lockedUntil) throw new AccountLockedException(lockedUntil);
     const code = generateCode();
-    const codeExpiresAt = new Date(Math.min(Date.now() + CODE_TTL_MS, challenge.expiresAt.getTime()));
+    const now = new Date();
     const purpose = PURPOSES[challenge.purpose];
-    await this.prisma.$transaction(async (tx) => {
-      await tx.emailChallenge.update({
-        where: { id: challenge.id },
-        data: { codeHash: hashCode(challenge.id, code), codeExpiresAt, codeAttempts: 0 },
+
+    const email = await this.prisma.$transaction(async (tx) => {
+      // Claim the send: only succeeds if no code went out in the last minute.
+      const { count } = await tx.emailChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          usedAt: null,
+          OR: [{ codeSentAt: null }, { codeSentAt: { lte: new Date(now.getTime() - RESEND_COOLDOWN_MS) } }],
+        },
+        data: {
+          codeHash: hashCode(challenge.id, code),
+          codeExpiresAt: new Date(now.getTime() + CODE_TTL_MS),
+          codeSentAt: now,
+          codeAttempts: 0,
+        },
       });
-      await this.audit.recordIn(tx, {
-        tenantId: null,
-        eventType: 'auth.email_code_sent',
-        actorUserId: challenge.userId,
-        target: { type: 'user', id: challenge.userId },
-        payload: { purpose: purpose.audit },
-      });
+      if (count === 0) return null;
+      await this.audit.recordIn(tx, userEvent(challenge.userId, challenge.userId, 'auth.email_code_sent', { purpose: purpose.audit }));
+      const user = await tx.user.findUniqueOrThrow({ where: { id: challenge.userId }, select: { email: true } });
+      return user.email;
     });
+    if (email === null) {
+      throw new HttpException('A code was sent less than a minute ago. Check your inbox, or try again shortly.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     await this.mail.send({
-      to: user.email,
+      to: email,
       subject: purpose.subject,
-      text: `Your code to ${purpose.action} is:\n\n${code}\n\nIt works once and expires in 10 minutes. If you didn't ask for it, someone may know your password: change it, and don't share this code.`,
+      text: `Your code to ${purpose.action} is:\n\n${code}\n\nIt works once and expires in ${CODE_TTL_MINUTES} minutes. If you didn't ask for it, someone may know your password: change it, and don't share this code.`,
     });
   }
 
   /**
    * Checks a code and, if it is right, marks the challenge used and runs onValid in the same
    * transaction. A wrong code costs one of the code's 5 guesses and counts towards lockout.
-   * Throws AccountLockedException while the User is locked, and BadRequestException otherwise.
+   * Every refused attempt is audited. Throws 429 while the User is locked or another check for
+   * them is running, and BadRequestException otherwise.
    */
   async verify<T>(
     challenge: EmailChallenge,
     code: string,
     onValid: (tx: ScopedTransaction) => Promise<T>,
   ): Promise<T> {
-    await this.lockout.assertNotLocked(challenge.userId);
-
-    const outcome = await this.prisma.$transaction(async (tx): Promise<CodeOutcome<T>> => {
-      // Lock the challenge so concurrent guesses are counted one at a time.
-      await tx.$executeRaw`SELECT 1 FROM email_challenges WHERE id = ${challenge.id}::uuid FOR UPDATE`;
+    const guarded = await this.lockout.guard(challenge.userId, async (tx): Promise<CodeOutcome<T>> => {
       const current = await tx.emailChallenge.findUnique({ where: { id: challenge.id } });
       const now = new Date();
       if (!current || current.usedAt !== null || current.expiresAt <= now) return { kind: 'invalid' };
@@ -144,32 +161,42 @@ export class EmailChallenges {
       if (current.codeAttempts >= MAX_CODE_ATTEMPTS) return { kind: 'exhausted' };
       if (!sameHash(current.codeHash, hashCode(current.id, code))) {
         await tx.emailChallenge.update({ where: { id: current.id }, data: { codeAttempts: { increment: 1 } } });
-        return { kind: 'wrong', attemptsLeft: MAX_CODE_ATTEMPTS - current.codeAttempts - 1 };
+        const lockedUntil = await this.lockout.recordFailureIn(tx, challenge.userId, 'code');
+        return { kind: 'wrong', attemptsLeft: MAX_CODE_ATTEMPTS - current.codeAttempts - 1, lockedUntil };
       }
       await tx.emailChallenge.update({ where: { id: current.id }, data: { usedAt: now } });
       return { kind: 'valid', result: await onValid(tx) };
     });
 
-    if (outcome.kind === 'valid') return outcome.result;
-    if (outcome.kind === 'invalid') throw new BadRequestException('This code request is no longer valid. Start again.');
-    if (outcome.kind === 'expired') throw new BadRequestException('This code has expired. Ask for a new one.');
-    if (outcome.kind === 'exhausted') {
-      throw new BadRequestException('Too many wrong guesses at this code. Ask for a new one.');
-    }
+    const outcome = guarded.kind === 'ran' ? guarded.result : null;
+    if (outcome?.kind === 'valid') return outcome.result;
 
-    await this.audit.record({
-      tenantId: null,
-      eventType: 'auth.email_code_failed',
-      actorUserId: challenge.userId,
-      target: { type: 'user', id: challenge.userId },
-      payload: { purpose: PURPOSES[challenge.purpose].audit, attemptsLeft: outcome.attemptsLeft },
-    });
-    const lockedUntil = await this.lockout.recordFailure(challenge.userId, 'code');
-    if (lockedUntil) throw new AccountLockedException(lockedUntil);
-    throw new BadRequestException(
-      outcome.attemptsLeft > 0
-        ? `That code is wrong. ${outcome.attemptsLeft} ${outcome.attemptsLeft === 1 ? 'guess' : 'guesses'} left.`
-        : 'That code is wrong, and it no longer works. Ask for a new one.',
+    const reason = outcome === null ? (guarded.kind === 'locked' ? 'account-locked' : 'attempt-in-progress') : outcome.kind;
+    await this.audit.record(
+      userEvent(challenge.userId, challenge.userId, 'auth.email_code_failed', {
+        purpose: PURPOSES[challenge.purpose].audit,
+        reason,
+        ...(outcome?.kind === 'wrong' ? { attemptsLeft: outcome.attemptsLeft } : {}),
+      }),
     );
+
+    const result = unwrapGuarded(guarded);
+    switch (result.kind) {
+      case 'invalid':
+        throw new BadRequestException('This code request is no longer valid. Start again.');
+      case 'expired':
+        throw new BadRequestException('This code has expired. Ask for a new one.');
+      case 'exhausted':
+        throw new BadRequestException('Too many wrong guesses at this code. Ask for a new one.');
+      case 'wrong':
+        if (result.lockedUntil) throw new AccountLockedException(result.lockedUntil);
+        throw new BadRequestException(
+          result.attemptsLeft > 0
+            ? `That code is wrong. ${result.attemptsLeft} ${result.attemptsLeft === 1 ? 'guess' : 'guesses'} left.`
+            : 'That code is wrong, and it no longer works. Ask for a new one.',
+        );
+      case 'valid':
+        return result.result;
+    }
   }
 }
