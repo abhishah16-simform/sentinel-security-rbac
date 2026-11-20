@@ -28,6 +28,11 @@ export interface SignupInput {
   readonly password: string;
 }
 
+export interface ProfileChanges {
+  readonly firstName?: string;
+  readonly lastName?: string;
+}
+
 function toProfile(user: User): UserProfile {
   return {
     id: user.id,
@@ -120,6 +125,16 @@ export class IdentityService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     return toProfile(user);
+  }
+
+  /** Changes the User's own name. Fields left undefined keep their current value. */
+  async updateProfile(userId: string, changes: ProfileChanges): Promise<UserProfile> {
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: userId },
+      data: { firstName: changes.firstName, lastName: changes.lastName },
+    });
+    if (count === 0) throw new NotFoundException('User not found');
+    return this.getProfile(userId);
   }
 
   private async sendVerificationEmail(user: User): Promise<void> {

@@ -55,3 +55,10 @@ DELETE {{baseUrl}}/v1/auth/refresh
 ### 7. Log out everywhere (revokes all of the User's refresh tokens)
 POST {{baseUrl}}/v1/auth/logout-all
 Authorization: Bearer {{login.response.body.accessToken}}
+
+### Change your name (either field may be omitted)
+PATCH {{baseUrl}}/v1/me
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{ "firstName": "Alice", "lastName": "Liddell" }

@@ -36,6 +36,42 @@
   const message = document.getElementById('message');
   const resend = document.getElementById('resend');
 
+  const nameForm = document.getElementById('name-form');
+  const editName = document.getElementById('edit-name');
+
+  // Accounts created before names existed have empty names: hide the row and offer to add one.
+  function showName(me) {
+    const fullName = [me.firstName, me.lastName].filter(Boolean).join(' ');
+    document.getElementById('me-name').textContent = fullName;
+    document.getElementById('name-row').hidden = !fullName;
+    editName.textContent = fullName ? 'Edit name' : 'Add your name';
+    nameForm.elements.firstName.value = me.firstName;
+    nameForm.elements.lastName.value = me.lastName;
+  }
+
+  function toggleNameForm(open) {
+    nameForm.hidden = !open;
+    editName.hidden = open;
+    if (open) nameForm.elements.firstName.focus();
+  }
+
+  editName.addEventListener('click', function () {
+    toggleNameForm(true);
+  });
+  document.getElementById('cancel-name').addEventListener('click', function () {
+    toggleNameForm(false);
+  });
+  handleForm(nameForm, message, async function (data) {
+    const me = await Sentinel.api('/v1/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName: data.get('firstName'), lastName: data.get('lastName') }),
+    });
+    showName(me);
+    toggleNameForm(false);
+    showMessage(message, 'Your name is saved.', 'success');
+  });
+
   function showLoggedOut() {
     loading.hidden = true;
     loggedIn.hidden = true;
@@ -48,7 +84,7 @@
       return;
     }
     const me = await Sentinel.api('/v1/me');
-    document.getElementById('me-name').textContent = `${me.firstName} ${me.lastName}`;
+    showName(me);
     document.getElementById('me-email').textContent = me.email;
     const verified = document.getElementById('me-verified');
     verified.textContent = me.emailVerified ? 'Yes' : 'No';

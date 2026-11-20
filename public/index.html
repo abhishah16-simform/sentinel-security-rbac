@@ -19,11 +19,20 @@
         </div>
         <div id="logged-in" hidden>
           <ul class="status">
-            <li><span>Name</span><span id="me-name"></span></li>
+            <li id="name-row" hidden><span>Name</span><span id="me-name"></span></li>
             <li><span>Email</span><span id="me-email"></span></li>
             <li><span>Email verified</span><span id="me-verified"></span></li>
             <li><span>Active Tenant</span><span id="active-tenant"></span></li>
           </ul>
+          <button id="edit-name" type="button" class="secondary">Edit name</button>
+          <form id="name-form" class="form" hidden>
+            <label>First name <input name="firstName" type="text" autocomplete="given-name" required maxlength="100" /></label>
+            <label>Last name <input name="lastName" type="text" autocomplete="family-name" required maxlength="100" /></label>
+            <div class="actions">
+              <button type="submit">Save name</button>
+              <button id="cancel-name" type="button" class="secondary">Cancel</button>
+            </div>
+          </form>
           <p class="links"><a href="/tenants.html" id="tenant-link">Choose or create a Tenant</a></p>
           <button id="resend" type="button" class="secondary" hidden>Resend verification email</button>
           <div class="actions">

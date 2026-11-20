@@ -147,7 +147,8 @@ button:disabled {
   margin-top: 16px;
 }
 
-#resend {
+#resend,
+#edit-name {
   margin-top: 12px;
 }
 
