@@ -37,7 +37,7 @@
     '</nav>' +
     '<nav class="nav-section" aria-label="Compliance">' +
     '<div class="nav-label">Compliance</div>' +
-    soonItem('list', 'Audit log') +
+    navItem('/audit-log.html', 'list', 'Audit log') +
     soonItem('clipboardCheck', 'Access reviews') +
     soonItem('bell', 'Alerts') +
     '</nav>' +

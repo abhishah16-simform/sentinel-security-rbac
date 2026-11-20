@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { AuditLog } from '../audit/audit-log.service';
 import { IdentityService } from '../identity/identity.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma, setTenantContext } from '../prisma/scoped-prisma';
@@ -36,6 +37,7 @@ export class TenancyService {
     private readonly prisma: PrismaService,
     private readonly scoped: ScopedPrisma,
     private readonly identity: IdentityService,
+    private readonly audit: AuditLog,
   ) {}
 
   /** Creates a Tenant and makes the creator its first Tenant Admin. Only verified Users may. */
@@ -53,10 +55,18 @@ export class TenancyService {
     const membership = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({ data: { name } });
       await setTenantContext(tx, tenant.id);
-      return tx.membership.create({
+      const created = await tx.membership.create({
         data: { tenantId: tenant.id, userId, isTenantAdmin: true },
         include: { tenant: true },
       });
+      await this.audit.recordIn(tx, {
+        tenantId: tenant.id,
+        eventType: 'tenant.created',
+        actorUserId: userId,
+        target: { type: 'tenant', id: tenant.id },
+        payload: { name: tenant.name, membershipId: created.id },
+      });
+      return created;
     });
     return toTenantMembership(membership);
   }

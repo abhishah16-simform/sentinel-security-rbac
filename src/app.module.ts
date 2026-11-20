@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'node:path';
+import { AuditConsoleModule } from './audit/audit-console.module';
 import { validateEnv } from './config/env';
 import { HealthModule } from './health/health.module';
 import { IdentityModule } from './identity/identity.module';
@@ -17,6 +18,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
       exclude: ['/v1/{*path}', '/.well-known/{*path}'],
     }),
     PrismaModule,
+    AuditConsoleModule,
     HealthModule,
     IdentityModule,
     SessionsModule,

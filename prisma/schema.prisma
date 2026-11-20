@@ -106,6 +106,7 @@ model Tenant {
 
   memberships   Membership[]
   refreshChains RefreshChain[]
+  auditEvents   AuditEvent[]
 
   @@map("tenants")
 }
@@ -126,4 +127,55 @@ model Membership {
   @@unique([tenantId, userId])
   @@index([userId])
   @@map("memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Audit Log
+//
+// One table for every chain. Tenant events carry their tenantId; platform-level events (signup,
+// logins before a Tenant is chosen, Platform Admin actions) have a null tenantId and form the
+// platform chain. This is the one table whose tenantId may be null: RLS shows Tenant rows inside
+// that Tenant's context and platform rows only when no Tenant context is set.
+// ---------------------------------------------------------------------------
+
+/// The head of one hash chain: one row per Tenant chain plus one for the platform chain. Writers
+/// lock it (SELECT ... FOR UPDATE) for the length of an insert, so each chain's writes are serialized.
+/// Platform-level table: it holds only sequence numbers and hashes, no Tenant data.
+model AuditChainHead {
+  /// "platform", or the ID of the Tenant whose chain this is.
+  chain     String   @id
+  /// Sequence number of the newest entry; 0 before the first.
+  seq       Int
+  /// Hash of the newest entry; the genesis hash before the first.
+  hash      String
+  updatedAt DateTime @updatedAt
+
+  @@map("audit_chain_heads")
+}
+
+/// One Audit Log entry. Append-only: a trigger rejects UPDATE and DELETE.
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  /// Null for platform-level events.
+  tenantId      String?  @db.Uuid
+  eventType     String
+  /// The User who acted; null when nobody is known (a failed login for an unknown email).
+  actorUserId   String?  @db.Uuid
+  targetType    String?
+  targetId      String?
+  applicationId String?  @db.Uuid
+  payload       Json     @default("{}")
+  createdAt     DateTime @default(now())
+  /// Position in the chain, the previous entry's hash and this entry's hash. All three are null
+  /// for entries that aren't chained (Access Checks).
+  seq           Int?
+  prevHash      String?
+  hash          String?
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, seq])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, actorUserId, createdAt])
+  @@map("audit_events")
 }

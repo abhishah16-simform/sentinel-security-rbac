@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { User } from '@prisma/client';
+import { AuditLog } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { isUniqueConstraintError } from '../common/prisma-errors';
 import type { Env } from '../config/env';
@@ -28,6 +29,12 @@ export interface SignupInput {
   readonly password: string;
 }
 
+/** The outcome of checking an email and password. */
+export type CredentialCheck =
+  | { readonly kind: 'valid'; readonly user: UserProfile }
+  | { readonly kind: 'wrong-password'; readonly userId: string }
+  | { readonly kind: 'unknown-email' };
+
 export interface ProfileChanges {
   readonly firstName?: string;
   readonly lastName?: string;
@@ -53,6 +60,7 @@ export class IdentityService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordHasher,
     private readonly mail: MailService,
+    private readonly audit: AuditLog,
     config: ConfigService<Env, true>,
   ) {
     this.appUrl = config.get('APP_URL', { infer: true });
@@ -70,7 +78,17 @@ export class IdentityService {
 
     let user: User;
     try {
-      user = await this.prisma.user.create({ data: { email, firstName, lastName, passwordHash } });
+      user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({ data: { email, firstName, lastName, passwordHash } });
+        await this.audit.recordIn(tx, {
+          tenantId: null,
+          eventType: 'user.signed_up',
+          actorUserId: created.id,
+          target: { type: 'user', id: created.id },
+          payload: { email },
+        });
+        return created;
+      });
     } catch (error: unknown) {
       if (!isUniqueConstraintError(error)) throw error;
       await this.notifyExistingAccount(email);
@@ -92,10 +110,18 @@ export class IdentityService {
       });
       if (claimed.count === 0) return false;
 
-      await tx.user.updateMany({
+      const { count } = await tx.user.updateMany({
         where: { id: record.userId, emailVerifiedAt: null },
         data: { emailVerifiedAt: now },
       });
+      if (count > 0) {
+        await this.audit.recordIn(tx, {
+          tenantId: null,
+          eventType: 'user.email_verified',
+          actorUserId: record.userId,
+          target: { type: 'user', id: record.userId },
+        });
+      }
       return true;
     });
     if (!verified) {
@@ -111,14 +137,19 @@ export class IdentityService {
     }
   }
 
-  /** Returns the User if the email and password match, or null. Takes similar time either way. */
-  async checkCredentials(rawEmail: string, password: string): Promise<UserProfile | null> {
+  /**
+   * Checks an email and password. Takes similar time whether or not the email has an account. The
+   * kind of failure is for the Audit Log only: callers must not tell the client which it was.
+   */
+  async checkCredentials(rawEmail: string, password: string): Promise<CredentialCheck> {
     const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(rawEmail) } });
     if (!user) {
       await this.passwords.verifyAgainstDummy(password);
-      return null;
+      return { kind: 'unknown-email' };
     }
-    return (await this.passwords.verify(user.passwordHash, password)) ? toProfile(user) : null;
+    return (await this.passwords.verify(user.passwordHash, password))
+      ? { kind: 'valid', user: toProfile(user) }
+      : { kind: 'wrong-password', userId: user.id };
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
@@ -127,13 +158,36 @@ export class IdentityService {
     return toProfile(user);
   }
 
+  /** The Users with these IDs that still exist, in no particular order. */
+  async findProfiles(userIds: readonly string[]): Promise<UserProfile[]> {
+    if (userIds.length === 0) return [];
+    const users = await this.prisma.user.findMany({ where: { id: { in: [...userIds] } } });
+    return users.map(toProfile);
+  }
+
+  async findProfileByEmail(rawEmail: string): Promise<UserProfile | null> {
+    const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(rawEmail) } });
+    return user ? toProfile(user) : null;
+  }
+
   /** Changes the User's own name. Fields left undefined keep their current value. */
   async updateProfile(userId: string, changes: ProfileChanges): Promise<UserProfile> {
-    const { count } = await this.prisma.user.updateMany({
-      where: { id: userId },
-      data: { firstName: changes.firstName, lastName: changes.lastName },
+    const { firstName, lastName } = changes;
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.user.updateMany({ where: { id: userId }, data: { firstName, lastName } });
+      if (count === 0) throw new NotFoundException('User not found');
+      if (firstName === undefined && lastName === undefined) return;
+      await this.audit.recordIn(tx, {
+        tenantId: null,
+        eventType: 'user.profile_updated',
+        actorUserId: userId,
+        target: { type: 'user', id: userId },
+        payload: {
+          ...(firstName === undefined ? {} : { firstName }),
+          ...(lastName === undefined ? {} : { lastName }),
+        },
+      });
     });
-    if (count === 0) throw new NotFoundException('User not found');
     return this.getProfile(userId);
   }
 

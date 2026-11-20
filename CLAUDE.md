@@ -32,6 +32,7 @@ This project has no automated tests by the owner's choice. Do not add Jest, Supe
 - Modules: `access-token` (JWT, guard, JWKS), `identity`, `sessions`, `tenancy`, `mail`, `prisma`. Guards come from `AccessTokenModule` so modules don't import each other circularly
 - A Tenant-owned table has a non-null `tenantId` column, and its migration must add `ENABLE` + `FORCE ROW LEVEL SECURITY` and a policy using `app_current_tenant_id()` (see README "Tenants and isolation")
 - Platform-level tables must not have a column named `tenantId`; the startup RLS check treats any such table as Tenant-owned
+- The one exception is `audit_events`: its `tenantId` is null for platform-chain entries, and a second policy shows those only when no Tenant context is set. Record events only through `AuditLog`
 - Tenant-scoped queries go through `ScopedPrisma.inTenant()`; a User's own cross-Tenant reads go through `ScopedPrisma.asUser()`
 - Endpoints that use the refresh cookie must live under `/v1/auth/refresh` (the cookie's path)
 

@@ -1,0 +1,44 @@
+# Audit Log (ticket 04). Log in with http/auth.http, create a Tenant and make it your Active
+# Tenant with http/tenants.http: those steps are recorded too. Tenant Admins only.
+
+@baseUrl = http://localhost:3000
+@accessToken = paste-access-token-with-tid
+@userEmail = you@example.com
+@cursor = paste-nextCursor
+
+### Newest entries of the Active Tenant's chain
+GET {{baseUrl}}/v1/audit-events
+Authorization: Bearer {{accessToken}}
+
+### Filters combine with AND. "to" is exclusive; "user" is a User ID or email (actor or target).
+GET {{baseUrl}}/v1/audit-events?from=2026-01-01T00:00:00Z&to=2030-01-01T00:00:00Z&user={{userEmail}}&eventType=tenant.switched&limit=10
+Authorization: Bearer {{accessToken}}
+
+### Next page
+GET {{baseUrl}}/v1/audit-events?limit=10&cursor={{cursor}}
+Authorization: Bearer {{accessToken}}
+
+### Every event type, for the filter
+GET {{baseUrl}}/v1/audit-events/types
+Authorization: Bearer {{accessToken}}
+
+### Verify the hash chain: { intact, checkedEntries, headSeq, headHash, firstBrokenLink }
+GET {{baseUrl}}/v1/audit-events/integrity
+Authorization: Bearer {{accessToken}}
+
+# To see the check fail, change an entry as the postgres superuser (the append-only trigger
+# blocks everyone else), then verify again: firstBrokenLink.problem is "hash-mismatch".
+#
+#   BEGIN; SET LOCAL session_replication_role = replica;
+#   UPDATE audit_events SET payload = '{"name":"Evil"}' WHERE "tenantId" = '<tenant id>' AND seq = 1;
+#   COMMIT;
+#
+# Deleting a middle entry gives "missing-entry".
+
+### Platform chain (signup, verification, logins): Platform Admins only, 403 otherwise
+GET {{baseUrl}}/v1/platform/audit-events
+Authorization: Bearer {{accessToken}}
+
+### Platform chain integrity
+GET {{baseUrl}}/v1/platform/audit-events/integrity
+Authorization: Bearer {{accessToken}}

@@ -1,5 +1,7 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ACCESS_TOKEN_TTL_SECONDS, AccessTokenService } from '../access-token/access-token.service';
+import { AuditLog } from '../audit/audit-log.service';
+import { normalizeEmail } from '../identity/email';
 import { IdentityService } from '../identity/identity.service';
 import { type ActiveTenantRef, TenancyService } from '../tenancy/tenancy.service';
 import { type IssuedRefreshToken, RefreshTokenService, type RotationResult } from './refresh-token.service';
@@ -18,14 +20,26 @@ export class SessionsService {
     private readonly accessTokens: AccessTokenService,
     private readonly refreshTokens: RefreshTokenService,
     private readonly tenancy: TenancyService,
+    private readonly audit: AuditLog,
   ) {}
 
   async login(email: string, password: string): Promise<SessionTokens> {
-    const user = await this.identity.checkCredentials(email, password);
-    if (!user) throw new UnauthorizedException('Invalid email or password');
+    const check = await this.identity.checkCredentials(email, password);
+    if (check.kind !== 'valid') {
+      // No Tenant is chosen before login, so failed logins go to the platform chain.
+      const userId = check.kind === 'wrong-password' ? check.userId : null;
+      await this.audit.record({
+        tenantId: null,
+        eventType: 'auth.login_failed',
+        actorUserId: userId,
+        target: userId === null ? undefined : { type: 'user', id: userId },
+        payload: { email: normalizeEmail(email), reason: check.kind },
+      });
+      throw new UnauthorizedException('Invalid email or password');
+    }
 
-    const refreshToken = await this.refreshTokens.startChain(user.id);
-    return this.withAccessToken(user.id, null, refreshToken);
+    const refreshToken = await this.refreshTokens.startChain(check.user.id);
+    return this.withAccessToken(check.user.id, null, refreshToken);
   }
 
   async refresh(refreshToken: string): Promise<SessionTokens> {

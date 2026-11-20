@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma, RefreshChain } from '@prisma/client';
+import { AuditLog } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
@@ -32,17 +33,28 @@ export type RotationResult =
 /**
  * Opaque refresh tokens grouped into chains, one chain per login. Each token works once and
  * is replaced on use. Presenting a token that was already used revokes its whole chain.
+ * Every change is recorded in the Audit Log in the same transaction: in the chain's Active
+ * Tenant's chain when it has one, otherwise in the platform chain.
  */
 @Injectable()
 export class RefreshTokenService {
   private readonly logger = new Logger(RefreshTokenService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLog,
+  ) {}
 
-  /** Starts a new chain for a fresh login and returns its first token. */
+  /** Starts a new chain for a fresh login and returns its first token. Records the login. */
   async startChain(userId: string): Promise<IssuedRefreshToken> {
     return this.prisma.$transaction(async (tx) => {
       const chain = await tx.refreshChain.create({ data: { userId } });
+      await this.audit.recordIn(tx, {
+        tenantId: null,
+        eventType: 'auth.login_succeeded',
+        actorUserId: userId,
+        target: { type: 'session', id: chain.id },
+      });
       return this.issueInChain(tx, chain.id);
     });
   }
@@ -80,6 +92,12 @@ export class RefreshTokenService {
       const now = new Date();
       if (current.usedAt !== null) {
         await this.revokeChains(tx, { id: chain.id }, now);
+        await this.audit.recordIn(tx, {
+          tenantId: chain.activeTenantId,
+          eventType: 'auth.refresh_token_reused',
+          actorUserId: chain.userId,
+          target: { type: 'session', id: chain.id },
+        });
         return { kind: 'reused', userId: chain.userId, chainId: chain.id };
       }
       if (current.expiresAt <= now) return { kind: 'rejected' };
@@ -96,29 +114,66 @@ export class RefreshTokenService {
           data: { activeTenantId: activeTenant?.tenantId ?? null, activeMembershipId: activeTenant?.membershipId ?? null },
         });
       }
+      await this.audit.recordIn(
+        tx,
+        switchTo
+          ? {
+              tenantId: switchTo.tenantId,
+              eventType: 'tenant.switched',
+              actorUserId: chain.userId,
+              target: { type: 'session', id: chain.id },
+              payload: { membershipId: switchTo.membershipId, fromTenantId: chain.activeTenantId },
+            }
+          : {
+              tenantId: activeTenant?.tenantId ?? null,
+              eventType: 'auth.token_refreshed',
+              actorUserId: chain.userId,
+              target: { type: 'session', id: chain.id },
+            },
+      );
       return { kind: 'rotated', userId: chain.userId, activeTenant, next: await this.issueInChain(tx, chain.id) };
     });
 
     if (result.kind === 'reused') {
-      // Recorded in the Audit Log (and raised as a Security Alert) once ticket 04 adds the audit writer.
       this.logger.warn(`Refresh token reuse detected; revoked chain ${result.chainId} of user ${result.userId}`);
     }
     return result;
   }
 
-  /** Revokes the chain the given token belongs to (log out on this device). Unknown tokens are ignored. */
+  /**
+   * Revokes the chain the given token belongs to (log out on this device). Unknown tokens and
+   * chains that are already revoked are ignored.
+   */
   async revokeChainOf(token: string): Promise<void> {
     const found = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: hashOpaqueToken(token) },
-      select: { chainId: true },
+      select: { chain: { select: { id: true, userId: true, activeTenantId: true } } },
     });
     if (!found) return;
-    await this.prisma.$transaction((tx) => this.revokeChains(tx, { id: found.chainId }, new Date()));
+    const { chain } = found;
+    await this.prisma.$transaction(async (tx) => {
+      if ((await this.revokeChains(tx, { id: chain.id }, new Date())) === 0) return;
+      await this.audit.recordIn(tx, {
+        tenantId: chain.activeTenantId,
+        eventType: 'auth.logged_out',
+        actorUserId: chain.userId,
+        target: { type: 'session', id: chain.id },
+      });
+    });
   }
 
-  /** Revokes every chain the User holds (log out everywhere). */
+  /** Revokes every chain the User holds (log out everywhere). Recorded in the platform chain. */
   async revokeAllForUser(userId: string): Promise<void> {
-    await this.prisma.$transaction((tx) => this.revokeChains(tx, { userId }, new Date()));
+    await this.prisma.$transaction(async (tx) => {
+      const revoked = await this.revokeChains(tx, { userId }, new Date());
+      await this.audit.recordIn(tx, {
+        tenantId: null,
+        eventType: 'auth.logged_out_everywhere',
+        actorUserId: userId,
+        target: { type: 'user', id: userId },
+        payload: { revokedSessions: revoked },
+      });
+    });
   }
 
   private async issueInChain(tx: Prisma.TransactionClient, chainId: string): Promise<IssuedRefreshToken> {
@@ -132,7 +187,8 @@ export class RefreshTokenService {
     tx: Prisma.TransactionClient,
     where: Prisma.RefreshChainWhereInput,
     now: Date,
-  ): Promise<void> {
-    await tx.refreshChain.updateMany({ where: { ...where, revokedAt: null }, data: { revokedAt: now } });
+  ): Promise<number> {
+    const { count } = await tx.refreshChain.updateMany({ where: { ...where, revokedAt: null }, data: { revokedAt: now } });
+    return count;
   }
 }

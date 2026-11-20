@@ -97,6 +97,16 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - RLS doesn't apply while the app connects as `postgres` (a superuser). See [Database user](#database-user).
 - [`http/tenants.http`](http/tenants.http) walks through it.
 
+## Audit Log
+
+- Every authentication event and admin change goes through one writer (`AuditLog`), in the same transaction as the change it records. See `src/audit/audit-event-types.ts` for the event types.
+- Entries are hash-chained: `hash = SHA-256(prevHash || canonical JSON of the entry)`, starting from 64 zeros. Each Tenant has its own chain. Events not tied to a Tenant (signup, verification, logins, logging out everywhere, profile changes, and later Platform Admin actions) go to the platform chain. Session events (refresh, reuse, logout) join the login's Active Tenant's chain once one is chosen.
+- Writes to one chain are serialized by locking its row in `audit_chain_heads` until the transaction ends. The head also records the newest entry, so removing entries from the end is detected too.
+- `audit_events` is the one table whose `tenantId` may be null (platform entries). RLS shows a Tenant's entries in its context, and platform entries only when no Tenant context is set. A trigger rejects `UPDATE`, `DELETE` and `TRUNCATE`.
+- Tenant Admins: `GET /v1/audit-events` (filters `from`, `to` (exclusive), `user` (ID or email, as actor or target), `eventType`, `applicationId`; paginated with `limit` and `cursor`), `GET /v1/audit-events/types` and `GET /v1/audit-events/integrity`, which reports the first broken link, if any. The console page is `/audit-log.html`.
+- Platform Admins: `GET /v1/platform/audit-events` and `GET /v1/platform/audit-events/integrity` for the platform chain.
+- [`http/audit.http`](http/audit.http) walks through it, including how to tamper with an entry to see the check fail.
+
 ## Commands
 
 | Command | What it does |

@@ -21,6 +21,7 @@
     mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6',
     menu: 'M4 6h16M4 12h16M4 18h16',
     plus: 'M12 5v14M5 12h14',
+    search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35',
     activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
     server: 'M2 4h20v6H2zM2 14h20v6H2zM6 7h.01M6 17h.01',
     arrowRight: 'M5 12h14M12 5l7 7-7 7',
