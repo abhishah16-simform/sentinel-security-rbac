@@ -121,15 +121,17 @@ export class RefreshTokenService {
           data: { activeTenantId: activeTenant?.tenantId ?? null, activeMembershipId: activeTenant?.membershipId ?? null },
         });
       }
-      await this.audit.recordIn(
-        tx,
-        switchTo
-          ? sessionEvent(chain, switchTo.tenantId, 'tenant.switched', {
-              membershipId: switchTo.membershipId,
-              fromTenantId: chain.activeTenantId,
-            })
-          : sessionEvent(chain, activeTenant?.tenantId ?? null, 'auth.token_refreshed'),
-      );
+      // A routine refresh isn't recorded: pages refresh every few minutes, which buried real events.
+      // Logins, Tenant switches, logouts and reused tokens (above) still are.
+      if (switchTo) {
+        await this.audit.recordIn(
+          tx,
+          sessionEvent(chain, switchTo.tenantId, 'tenant.switched', {
+            membershipId: switchTo.membershipId,
+            fromTenantId: chain.activeTenantId,
+          }),
+        );
+      }
       return { kind: 'rotated', userId: chain.userId, activeTenant, next: await this.issueInChain(tx, chain.id) };
     });
 

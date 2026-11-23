@@ -15,6 +15,7 @@ export const AUDIT_EVENT_TYPES = {
   'auth.email_code_sent': 'Sent email code',
   'auth.email_code_failed': 'Entered wrong email code',
   'auth.account_locked': 'Locked account',
+  /** No longer written (routine refreshes were noise); kept so older entries keep their label. */
   'auth.token_refreshed': 'Refreshed session',
   'auth.refresh_token_reused': 'Reused refresh token',
   'auth.logged_out': 'Logged out',
