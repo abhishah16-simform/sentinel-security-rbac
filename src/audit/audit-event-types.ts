@@ -37,6 +37,13 @@ export const AUDIT_EVENT_TYPES = {
   'application.resource_type_deprecated': 'Deprecated Resource Type',
   'application.action_added': 'Added Action',
   'application.action_deprecated': 'Deprecated Action',
+  'role_template.created': 'Created Role Template',
+  'role_template.updated': 'Updated Role Template',
+  'role_template.deleted': 'Deleted Role Template',
+  'role_template.permission_added': 'Added Permission to Role Template',
+  'role_template.permission_removed': 'Removed Permission from Role Template',
+  'application.enabled': 'Enabled Application',
+  'application.disabled': 'Disabled Application',
 } as const;
 
 export type AuditEventType = keyof typeof AUDIT_EVENT_TYPES;

@@ -1,0 +1,85 @@
+# Role Templates and Enablement (ticket 08).
+# Platform Admin requests need a Platform Admin access token (see http/platform-applications.http).
+# Tenant Admin requests need an access token with an Active Tenant (see http/tenants.http).
+
+@baseUrl = http://localhost:9800
+@platformToken = paste-platform-admin-access-token
+@tenantToken = paste-tenant-admin-access-token
+@applicationId = paste-application-id
+@templateId = paste-role-template-id
+@permissionId = paste-template-permission-id
+
+# ---------------------------------------------------------------------------
+# Role Templates (Platform Admin, platform audit chain)
+# ---------------------------------------------------------------------------
+
+### Create a Role Template, optionally with Permissions. Each must name an Action on a Resource Type
+### in the Application Schema that isn't Deprecated (400 otherwise). inverted: true is a Deny Rule.
+### 409 if the name exists in this Application (ignoring case).
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/role-templates
+Authorization: Bearer {{platformToken}}
+Content-Type: application/json
+
+{
+  "name": "Editor",
+  "description": "Reads and edits invoices, never exports them",
+  "permissions": [
+    { "resourceType": "Invoice", "action": "read" },
+    { "resourceType": "Invoice", "action": "approve" },
+    { "resourceType": "Invoice", "action": "export", "inverted": true }
+  ]
+}
+
+### The Application's Role Templates, oldest first (paginated: limit, cursor).
+### Permissions on Deprecated Resource Types or Actions have "deprecated": true.
+GET {{baseUrl}}/v1/platform/applications/{{applicationId}}/role-templates
+Authorization: Bearer {{platformToken}}
+
+### Rename or re-describe. Tenants' copies don't change.
+PATCH {{baseUrl}}/v1/platform/applications/{{applicationId}}/role-templates/{{templateId}}
+Authorization: Bearer {{platformToken}}
+Content-Type: application/json
+
+{ "name": "Invoice Editor" }
+
+### Add a Permission (409 if the template already has it)
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/role-templates/{{templateId}}/permissions
+Authorization: Bearer {{platformToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "read", "inverted": false }
+
+### Remove a Permission, including one on a Deprecated entry
+DELETE {{baseUrl}}/v1/platform/applications/{{applicationId}}/role-templates/{{templateId}}/permissions/{{permissionId}}
+Authorization: Bearer {{platformToken}}
+
+### Delete a Role Template (204). Roles already copied from it stay.
+DELETE {{baseUrl}}/v1/platform/applications/{{applicationId}}/role-templates/{{templateId}}
+Authorization: Bearer {{platformToken}}
+
+# ---------------------------------------------------------------------------
+# Enablement (Tenant Admin of the Active Tenant, Tenant audit chain)
+# ---------------------------------------------------------------------------
+
+### Every registered Application, oldest first, with enabled, enabledAt, disabledAt and the count of
+### this Tenant's Permissions that use Deprecated entries (paginated: limit, cursor)
+GET {{baseUrl}}/v1/tenants/current/applications
+Authorization: Bearer {{tenantToken}}
+
+### One Application: its Schema, the Tenant's Roles for it (Deprecated Permissions flagged) and, before
+### the first Enablement, the Role Templates that enabling will copy
+GET {{baseUrl}}/v1/tenants/current/applications/{{applicationId}}
+Authorization: Bearer {{tenantToken}}
+
+### Enable. The first time copies the Role Templates in as Roles (skipping Permissions on Deprecated
+### entries). Enabling again after a disable brings back the Tenant's Roles as they were, copying nothing.
+POST {{baseUrl}}/v1/tenants/current/applications/{{applicationId}}/enable
+Authorization: Bearer {{tenantToken}}
+
+### Disable. The Tenant's Roles for it are kept.
+POST {{baseUrl}}/v1/tenants/current/applications/{{applicationId}}/disable
+Authorization: Bearer {{tenantToken}}
+
+### The Enablement changes in the Tenant's Audit Log
+GET {{baseUrl}}/v1/audit-events?applicationId={{applicationId}}
+Authorization: Bearer {{tenantToken}}

@@ -1698,3 +1698,65 @@ button.link:hover {
   flex: 1 1 160px;
   height: 32px;
 }
+
+/* Permissions (Role Templates and a Tenant's Roles): "allow read Document" chips. */
+.chip .effect {
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.chip .effect.allow {
+  color: var(--ok);
+}
+
+.chip .effect.deny {
+  color: var(--bad);
+}
+
+.chip.static {
+  padding-right: 10px;
+}
+
+/* A Permission on a Deprecated Resource Type or Action: still there, but flagged for clean-up. */
+.chip.flagged {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.chip .flag {
+  color: var(--warn);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.add-inline select {
+  width: auto;
+  flex: 0 1 auto;
+  height: 32px;
+}
+
+.schema-head .description {
+  flex: 1 1 100%;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+
+.callout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 20px;
+  color: var(--text);
+  font-size: 0.875rem;
+  background: var(--warn-soft);
+  border-top: 1px solid var(--border);
+}
+
+.callout svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--warn);
+}

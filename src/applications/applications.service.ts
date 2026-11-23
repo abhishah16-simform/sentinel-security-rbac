@@ -7,6 +7,7 @@ import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ScopedTransaction } from '../prisma/scoped-prisma';
+import { lockApplication } from './application-lock';
 import { RESERVED_ACTION_NAMES, RESERVED_RESOURCE_TYPE_NAMES } from './schema-names';
 
 /** An Application as the Platform Admin console lists it. Never includes the secret or its hash. */
@@ -188,7 +189,7 @@ export class ApplicationsService {
   async rotateSecret(actorUserId: string, applicationId: string): Promise<IssuedSecret> {
     const clientSecret = generateOpaqueToken();
     const application = await this.prisma.$transaction(async (tx) => {
-      await this.lockApplication(tx, applicationId);
+      await lockApplication(tx, applicationId);
       const updated = await tx.application.update({
         where: { id: applicationId },
         data: { clientSecretHash: hashOpaqueToken(clientSecret), secretIssuedAt: new Date() },
@@ -216,7 +217,7 @@ export class ApplicationsService {
     });
 
     await this.prisma.$transaction(async (tx) => {
-      const application = await this.lockApplication(tx, applicationId);
+      const application = await lockApplication(tx, applicationId);
       assertUniqueName(application.resourceTypes, name, 'Resource Type');
       const resourceType = await tx.resourceType.create({
         data: { applicationId, name, actions: { create: uniqueActions } },
@@ -234,7 +235,7 @@ export class ApplicationsService {
   async addAction(actorUserId: string, applicationId: string, resourceTypeId: string, name: string): Promise<ApplicationDetail> {
     assertNotReserved(name, RESERVED_ACTION_NAMES, 'an Action');
     await this.prisma.$transaction(async (tx) => {
-      await this.lockApplication(tx, applicationId);
+      await lockApplication(tx, applicationId);
       const resourceType = await tx.resourceType.findFirst({
         where: { id: resourceTypeId, applicationId },
         include: { actions: true },
@@ -256,7 +257,7 @@ export class ApplicationsService {
   /** Deprecates a Resource Type, and with it all its Actions. It is never removed. */
   async deprecateResourceType(actorUserId: string, applicationId: string, resourceTypeId: string): Promise<ApplicationDetail> {
     await this.prisma.$transaction(async (tx) => {
-      await this.lockApplication(tx, applicationId);
+      await lockApplication(tx, applicationId);
       const resourceType = await tx.resourceType.findFirst({ where: { id: resourceTypeId, applicationId } });
       if (!resourceType) throw new NotFoundException('Resource Type not found');
       const { count } = await tx.resourceType.updateMany({
@@ -280,7 +281,7 @@ export class ApplicationsService {
     actionId: string,
   ): Promise<ApplicationDetail> {
     await this.prisma.$transaction(async (tx) => {
-      await this.lockApplication(tx, applicationId);
+      await lockApplication(tx, applicationId);
       const action = await tx.action.findFirst({
         where: { id: actionId, resourceTypeId, resourceType: { applicationId } },
         include: { resourceType: true },
@@ -299,21 +300,6 @@ export class ApplicationsService {
       });
     });
     return this.get(applicationId);
-  }
-
-  /**
-   * Locks the Application row until the transaction ends, so changes to one Application run one at a
-   * time: the ignore-case uniqueness check can't be raced, and an Action can't be added to a Resource
-   * Type that is being Deprecated. Returns it with its Resource Types.
-   */
-  private async lockApplication(
-    tx: ScopedTransaction,
-    applicationId: string,
-  ): Promise<Prisma.ApplicationGetPayload<{ include: { resourceTypes: true } }>> {
-    await tx.$queryRaw`SELECT id FROM applications WHERE id = ${applicationId}::uuid FOR UPDATE`;
-    const application = await tx.application.findUnique({ where: { id: applicationId }, include: { resourceTypes: true } });
-    if (!application) throw new NotFoundException('Application not found');
-    return application;
   }
 
   /** Platform Admin actions join the platform chain (no Tenant) and name the Application. */

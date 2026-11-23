@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Application · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><a href="/applications.html">Applications</a><span class="sep">/</span><span aria-current="page" id="crumb-name">Application</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1><span id="app-name">Application</span> <span id="app-status"></span></h1>
+              <p class="subtitle" id="app-subtitle">Your Tenant's Roles for this Application, and the Application Schema they are written against.</p>
+            </div>
+            <button type="button" id="toggle" hidden></button>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/applications.html" id="blocked-link">All Applications</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="roles-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="roles-title">Roles</h2>
+                  <p id="roles-intro"></p>
+                </div>
+                <span class="icon-tile"><i data-icon="key"></i></span>
+              </div>
+              <p class="callout" id="deprecated-callout" hidden>
+                <i data-icon="alert"></i><span id="deprecated-text"></span>
+              </p>
+              <ul class="schema-list" id="roles"></ul>
+              <div id="roles-empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="key"></i></span>
+                <strong id="roles-empty-title"></strong>
+                <span id="roles-empty-text"></span>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="templates-title" id="templates-card" hidden>
+              <div class="card-header">
+                <div>
+                  <h2 id="templates-title">Default Roles</h2>
+                  <p>Enabling this Application copies these Role Templates into your Tenant as Roles you can then change freely.</p>
+                </div>
+              </div>
+              <ul class="schema-list" id="templates"></ul>
+            </section>
+
+            <section class="card" aria-labelledby="schema-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="schema-title">Application Schema</h2>
+                  <p>What this Application protects and the Actions on each. Deprecated entries can't be used in new Permissions.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+              </div>
+              <ul class="schema-list" id="schema"></ul>
+              <div id="schema-empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+                <strong>No Resource Types yet</strong>
+                <span>The operators of SENTINEL haven't defined this Application's Schema.</span>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/permissions.js"></script>
+    <script src="/application.js"></script>
+  </body>
+</html>

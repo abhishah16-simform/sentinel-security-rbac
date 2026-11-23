@@ -125,6 +125,14 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - The Application Schema: `POST …/:id/resource-types` (with optional `actions`), `POST …/resource-types/:rtId/actions`, and `POST …/deprecate` on either. Entries are never removed. A Deprecated Resource Type makes its Actions count as Deprecated and takes no new Actions. Names are identifiers (a letter, then letters, digits, `_` or `-`), unique ignoring case; CASL's `manage` and `all` are reserved.
 - Every Platform Admin action is recorded in the platform audit chain with the Application's ID. The console pages are `/platform-applications.html` and `/platform-application.html?id=…`, shown in a Platform section of the sidebar for Platform Admins only. [`http/platform-applications.http`](http/platform-applications.http) walks through it.
 
+## Role Templates and Enablement
+
+- Role Templates are default Roles an Application ships, kept in the platform-level `role_templates` and `role_template_permissions` tables. Platform Admins manage them under `/v1/platform/applications/:id/role-templates` (list, `POST`, `PATCH :tid` for name and description, `DELETE :tid`, `POST :tid/permissions`, `DELETE :tid/permissions/:pid`). A Permission is `{ resourceType, action, inverted }`, CASL's raw-rule shape; a new one must use Schema entries that aren't Deprecated. Changes lock the Application row, like Schema changes, and are recorded in the platform chain (`role_template.*`).
+- Tenant Admins browse every registered Application at `GET /v1/tenants/current/applications` and enable or disable one with `POST …/:id/enable` and `POST …/:id/disable`. The console pages are `/applications.html` and `/application.html?id=…`.
+- `enablements`, `roles` and `permissions` are Tenant-owned (RLS). The first enable creates the Enablement row and copies each Role Template into the Tenant as an ordinary Role, leaving out Permissions on Deprecated entries. The copies are never synced: later template changes don't reach them. Disabling sets `disabledAt` and keeps the Roles; enabling again clears it and copies nothing. Each change locks the Tenant row and holds the Application row `FOR SHARE`, so templates can't change mid-copy.
+- A Permission whose Resource Type or Action is Deprecated keeps working but is flagged (`deprecated: true`) on both consoles, and the Applications list counts them per Application.
+- Enablement changes are recorded in the Tenant's chain (`application.enabled`, `application.disabled`). The code lives in `src/access-rules/` (Tenant side), which imports the platform-level `applications` module, never the reverse. [`http/enablement-role-templates.http`](http/enablement-role-templates.http) walks through it.
+
 ## Audit Log
 
 - Every authentication event and admin change goes through one writer (`AuditLog`), in the same transaction as the change it records. See `src/audit/audit-event-types.ts` for the event types.

@@ -27,7 +27,7 @@
           <div class="page-header">
             <div>
               <h1 id="app-name">Application</h1>
-              <p class="subtitle">Credentials and Application Schema. Schema entries can be added or Deprecated, never removed.</p>
+              <p class="subtitle">Credentials, Application Schema and Role Templates. Schema entries can be added or Deprecated, never removed.</p>
             </div>
           </div>
 
@@ -90,6 +90,39 @@
                 <span>Add what this Application protects, such as Document or Invoice.</span>
               </div>
             </section>
+
+            <section class="card" aria-labelledby="templates-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="templates-title">Role Templates</h2>
+                  <p>Default Roles, copied into a Tenant when it first enables this Application. Later changes don't reach those copies.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="key"></i></span>
+              </div>
+              <form id="template-form" class="inline-form form">
+                <div class="row">
+                  <label>
+                    Name
+                    <input name="name" required maxlength="100" autocomplete="off" placeholder="Viewer" />
+                  </label>
+                  <label>
+                    Description
+                    <input name="description" maxlength="500" autocomplete="off" placeholder="Can read every document" />
+                  </label>
+                </div>
+                <div class="actions"><button type="submit"><i data-icon="plus"></i>Add Role Template</button></div>
+              </form>
+              <ul class="schema-list" id="templates"></ul>
+              <div id="templates-empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="key"></i></span>
+                <strong>No Role Templates yet</strong>
+                <span>Tenants that enable this Application start with no Roles.</span>
+              </div>
+              <div class="card-footer" id="templates-more-footer" hidden>
+                <span class="hint">More Role Templates to show</span>
+                <button type="button" class="secondary small" id="templates-more">Load more</button>
+              </div>
+            </section>
           </div>
         </main>
       </div>
@@ -102,6 +135,7 @@
     <script src="/session.js"></script>
     <script src="/shell.js"></script>
     <script src="/secret.js"></script>
+    <script src="/permissions.js"></script>
     <script src="/platform-application.js"></script>
   </body>
 </html>

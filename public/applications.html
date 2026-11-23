@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Applications · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Applications</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Applications</h1>
+              <p class="subtitle">Choose which Applications your Tenant uses. Enabling one for the first time gives your Tenant its default Roles.</p>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/tenants.html" id="blocked-link" hidden>Choose a Tenant</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="list-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="list-title">Registered Applications</h2>
+                  <p>Your Users can only reach the ones you enable. Disabling one keeps your Roles for it.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Name</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Clean-up</th>
+                      <th scope="col">Registered</th>
+                      <th scope="col" class="num">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows"></tbody>
+                </table>
+              </div>
+              <div id="empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+                <strong>No Applications registered yet</strong>
+                <span>Applications are registered by the operators of SENTINEL.</span>
+              </div>
+              <div class="card-footer" id="more-footer" hidden>
+                <span class="hint">More Applications to show</span>
+                <button type="button" class="secondary small" id="more">Load more</button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/applications.js"></script>
+  </body>
+</html>

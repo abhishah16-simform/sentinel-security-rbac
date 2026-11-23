@@ -1,9 +1,11 @@
-// Platform Admin console: one Application's credentials and Application Schema.
+// Platform Admin console: one Application's credentials, Application Schema and Role Templates.
 (function () {
   const message = document.getElementById('message');
   const schema = document.getElementById('schema');
   const id = new URLSearchParams(window.location.search).get('id') || '';
   const base = '/v1/platform/applications/' + encodeURIComponent(id);
+  // The Application as last loaded: its Schema feeds the Permission pickers on Role Templates.
+  let current = null;
 
   function block(title, text) {
     document.getElementById('loading').hidden = true;
@@ -36,6 +38,7 @@
     }
     try {
       render(await work());
+      await templates.reload();
       if (done) showMessage(message, done, 'success');
     } catch (error) {
       showMessage(message, error.message, 'error');
@@ -148,6 +151,7 @@
   }
 
   function render(application) {
+    current = application;
     document.title = application.name + ' · SENTINEL';
     document.getElementById('app-name').textContent = application.name;
     document.getElementById('crumb-name').textContent = application.name;
@@ -159,6 +163,223 @@
     schema.replaceChildren.apply(schema, application.resourceTypes.map(resourceTypeItem));
     document.getElementById('schema-empty').hidden = application.resourceTypes.length > 0;
   }
+
+  // ---------------------------------------------------------------- Role Templates
+
+  function api(method, path, body) {
+    return Sentinel.api(base + '/role-templates' + path, {
+      method: method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
+  // Runs a change to one template. It returns the updated template (re-rendered in place) or
+  // nothing (the list is reloaded).
+  async function templateChange(button, work, done) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    try {
+      const updated = await work();
+      if (updated === false) return;
+      if (updated) templates.replace(updated);
+      else await templates.reload();
+      showMessage(message, done, 'success');
+    } catch (error) {
+      showMessage(message, error.message, 'error');
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+  }
+
+  function smallButton(label, className, ariaLabel, onClick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className + ' small';
+    button.textContent = label;
+    button.setAttribute('aria-label', ariaLabel);
+    button.addEventListener('click', function () {
+      onClick(button);
+    });
+    return button;
+  }
+
+  function option(value, label) {
+    const element = document.createElement('option');
+    element.value = value;
+    element.textContent = label;
+    return element;
+  }
+
+  // The form that adds a Permission: allow or deny, then an Action that isn't Deprecated.
+  function permissionForm(template) {
+    const form = document.createElement('form');
+    form.className = 'add-inline';
+    const pairs = [];
+    current.resourceTypes.forEach(function (resourceType) {
+      if (resourceType.deprecatedAt) return;
+      resourceType.actions.forEach(function (action) {
+        if (!action.deprecated) pairs.push({ resourceType: resourceType.name, action: action.name });
+      });
+    });
+    if (pairs.length === 0) {
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = 'Add Resource Types and Actions to the Schema to give this template Permissions.';
+      form.append(hint);
+      return form;
+    }
+    const effect = document.createElement('select');
+    effect.setAttribute('aria-label', 'Allow or deny, for a new Permission on ' + template.name);
+    effect.append(option('allow', 'Allow'), option('deny', 'Deny'));
+    const pair = document.createElement('select');
+    pair.setAttribute('aria-label', 'Action on Resource Type, for a new Permission on ' + template.name);
+    pairs.forEach(function (entry, index) {
+      pair.append(option(String(index), entry.action + ' · ' + entry.resourceType));
+    });
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    submit.className = 'secondary small';
+    submit.textContent = 'Add Permission';
+    form.append(effect, pair, submit);
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const chosen = pairs[Number(pair.value)];
+      const permission = { resourceType: chosen.resourceType, action: chosen.action, inverted: effect.value === 'deny' };
+      templateChange(
+        submit,
+        function () {
+          return api('POST', '/' + template.id + '/permissions', permission);
+        },
+        'Added "' + Permissions.describe(permission) + '" to ' + template.name + '.',
+      );
+    });
+    return form;
+  }
+
+  function templateItem(template) {
+    const li = document.createElement('li');
+    li.dataset.templateId = template.id;
+    const head = document.createElement('div');
+    head.className = 'schema-head';
+    const title = document.createElement('strong');
+    title.textContent = template.name;
+    const flagged = template.permissions.filter(function (permission) {
+      return permission.deprecated;
+    }).length;
+    if (flagged > 0) title.append(' ', badge(flagged + ' Deprecated', 'warn'));
+    const buttons = document.createElement('span');
+    buttons.className = 'actions';
+    buttons.append(
+      smallButton('Edit', 'ghost', 'Rename or describe Role Template ' + template.name, function (button) {
+        const name = window.prompt('Role Template name', template.name);
+        if (name === null) return;
+        const description = window.prompt('Description (optional)', template.description);
+        if (description === null) return;
+        templateChange(
+          button,
+          function () {
+            return api('PATCH', '/' + template.id, { name: name.trim(), description: description.trim() });
+          },
+          'Role Template saved.',
+        );
+      }),
+      smallButton('Delete', 'danger', 'Delete Role Template ' + template.name, function (button) {
+        const prompt = 'Delete Role Template "' + template.name + '"? Tenants that already copied it keep their Role.';
+        if (!window.confirm(prompt)) return;
+        templateChange(
+          button,
+          async function () {
+            await api('DELETE', '/' + template.id);
+          },
+          'Role Template ' + template.name + ' deleted.',
+        );
+      }),
+    );
+    head.append(title, buttons);
+    if (template.description) {
+      const description = document.createElement('span');
+      description.className = 'description';
+      description.textContent = template.description;
+      head.append(description);
+    }
+
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    template.permissions.forEach(function (permission) {
+      chips.append(
+        Permissions.chip(permission, function (button) {
+          templateChange(
+            button,
+            function () {
+              return api('DELETE', '/' + template.id + '/permissions/' + permission.id);
+            },
+            'Removed "' + Permissions.describe(permission) + '" from ' + template.name + '.',
+          );
+        }),
+      );
+    });
+    if (template.permissions.length === 0) {
+      const none = document.createElement('span');
+      none.className = 'hint';
+      none.textContent = 'No Permissions yet.';
+      chips.append(none);
+    }
+    li.append(head, chips, permissionForm(template));
+    return li;
+  }
+
+  // The paginated list of Role Templates, oldest first.
+  const templates = (function () {
+    const list = document.getElementById('templates');
+    const footer = document.getElementById('templates-more-footer');
+    const more = document.getElementById('templates-more');
+    let nextCursor = null;
+
+    function show(page, append) {
+      const items = page.items.map(templateItem);
+      if (append) list.append.apply(list, items);
+      else list.replaceChildren.apply(list, items);
+      nextCursor = page.nextCursor;
+      footer.hidden = !nextCursor;
+      document.getElementById('templates-empty').hidden = list.children.length > 0;
+    }
+
+    more.addEventListener('click', async function () {
+      more.disabled = true;
+      more.setAttribute('aria-busy', 'true');
+      try {
+        show(await api('GET', '?cursor=' + encodeURIComponent(nextCursor)), true);
+      } catch (error) {
+        showMessage(message, error.message, 'error');
+      } finally {
+        more.disabled = false;
+        more.removeAttribute('aria-busy');
+      }
+    });
+
+    return {
+      async reload() {
+        show(await api('GET', ''), false);
+      },
+      replace(template) {
+        const existing = list.querySelector('[data-template-id="' + template.id + '"]');
+        if (existing) existing.replaceWith(templateItem(template));
+      },
+    };
+  })();
+
+  const templateForm = document.getElementById('template-form');
+  handleForm(templateForm, message, async function (data) {
+    const template = await api('POST', '', {
+      name: String(data.get('name')).trim(),
+      description: String(data.get('description') || '').trim(),
+    });
+    templateForm.reset();
+    await templates.reload();
+    showMessage(message, 'Role Template ' + template.name + ' added. Give it Permissions below.', 'success');
+  });
 
   const rotate = document.getElementById('rotate');
   rotate.addEventListener('click', async function () {
@@ -185,6 +406,7 @@
       .filter(Boolean);
     const name = String(data.get('name')).trim();
     render(await post('/resource-types', { name: name, actions: actions }));
+    await templates.reload();
     resourceTypeForm.reset();
     showMessage(message, 'Resource Type ' + name + ' added.', 'success');
   });
@@ -206,6 +428,7 @@
       return;
     }
     render(await Sentinel.api(base));
+    await templates.reload();
     document.getElementById('loading').hidden = true;
     document.getElementById('console').hidden = false;
   }

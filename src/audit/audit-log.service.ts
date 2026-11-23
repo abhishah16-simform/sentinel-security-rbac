@@ -9,7 +9,7 @@ import { entryHash, GENESIS_HASH, type HashedEntry, PLATFORM_CHAIN } from './aud
 export type AuditPayload = Readonly<Record<string, string | number | boolean | null>>;
 
 export interface AuditTarget {
-  readonly type: 'user' | 'tenant' | 'session' | 'invitation' | 'application';
+  readonly type: 'user' | 'tenant' | 'session' | 'invitation' | 'application' | 'role_template';
   readonly id: string;
 }
 

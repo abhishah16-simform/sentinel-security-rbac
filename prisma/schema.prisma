@@ -160,6 +160,9 @@ model Tenant {
   invitations   Invitation[]
   refreshChains RefreshChain[]
   auditEvents   AuditEvent[]
+  enablements   Enablement[]
+  roles         Role[]
+  permissions   Permission[]
 
   @@map("tenants")
 }
@@ -244,6 +247,9 @@ model Application {
   updatedAt        DateTime @updatedAt
 
   resourceTypes ResourceType[]
+  roleTemplates RoleTemplate[]
+  enablements   Enablement[]
+  roles         Role[]
 
   @@map("applications")
 }
@@ -278,6 +284,107 @@ model Action {
 
   @@unique([resourceTypeId, name])
   @@map("actions")
+}
+
+/// A default Role an Application ships. Copied into a Tenant when the Tenant first enables the
+/// Application; the copies are ordinary Roles and are never synced with the template afterwards.
+model RoleTemplate {
+  id            String   @id @default(uuid()) @db.Uuid
+  applicationId String   @db.Uuid
+  /// Unique within the Application, ignoring case (checked by the service under the Application lock).
+  name          String
+  description   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  application Application              @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  permissions RoleTemplatePermission[]
+
+  @@unique([applicationId, name])
+  @@map("role_templates")
+}
+
+/// One Permission in a Role Template, in CASL's raw-rule shape with string subjects (ADR 0001).
+/// action and resourceType are Application Schema names; new ones may not be Deprecated.
+model RoleTemplatePermission {
+  id             String   @id @default(uuid()) @db.Uuid
+  roleTemplateId String   @db.Uuid
+  action         String
+  resourceType   String
+  /// true for a Deny Rule.
+  inverted       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  roleTemplate RoleTemplate @relation(fields: [roleTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([roleTemplateId, resourceType, action, inverted])
+  @@map("role_template_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// Enablement and Access Rules (Tenant-owned: tenantId, RLS)
+// ---------------------------------------------------------------------------
+
+/// Tenant-owned (RLS). A Tenant's decision to use an Application. Created the first time the
+/// Tenant enables it, which is when Role Templates are copied; disabling sets disabledAt and keeps
+/// the Tenant's Roles, and enabling again clears it without copying anything.
+model Enablement {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @db.Uuid
+  applicationId String    @db.Uuid
+  /// When it was last enabled.
+  enabledAt     DateTime
+  /// Set while disabled; the Application is enabled exactly when this is null.
+  disabledAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, applicationId])
+  @@map("enablements")
+}
+
+/// Tenant-owned (RLS). A named set of Permissions belonging to one Tenant and one Application.
+model Role {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  applicationId String   @db.Uuid
+  name          String
+  description   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application  @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  permissions Permission[]
+
+  @@unique([tenantId, applicationId, name])
+  @@index([tenantId, applicationId])
+  @@map("roles")
+}
+
+/// Tenant-owned (RLS). One rule inside a Role, in CASL's raw-rule shape with string subjects
+/// (ADR 0001): an Action on a Resource Type, allowed or denied (inverted), optionally limited by a
+/// Condition.
+model Permission {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  roleId       String   @db.Uuid
+  action       String
+  resourceType String
+  /// true for a Deny Rule.
+  inverted     Boolean  @default(false)
+  /// A CASL/Mongo-style Condition, or null for none.
+  conditions   Json?
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([roleId])
+  @@index([tenantId])
+  @@map("permissions")
 }
 
 // ---------------------------------------------------------------------------

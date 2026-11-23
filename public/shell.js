@@ -6,7 +6,8 @@
   if (!sidebar) return;
   const path = window.location.pathname === '/' ? '/index.html' : window.location.pathname;
   // Detail pages highlight the list they belong to.
-  const current = path === '/platform-application.html' ? '/platform-applications.html' : path;
+  const detailOf = { '/platform-application.html': '/platform-applications.html', '/application.html': '/applications.html' };
+  const current = detailOf[path] || path;
 
   function navItem(href, icon, label) {
     const here = href === current ? ' aria-current="page"' : '';
@@ -36,7 +37,7 @@
     '<div class="nav-label">Access control</div>' +
     soonItem('key', 'Roles') +
     soonItem('lock', 'Permissions') +
-    soonItem('grid', 'Applications') +
+    navItem('/applications.html', 'grid', 'Applications') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +
     '<div class="nav-label">Platform</div>' +
