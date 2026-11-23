@@ -76,7 +76,7 @@ function toView(template: TemplateWithPermissions, schema: SchemaIndex): RoleTem
       resourceType: permission.resourceType,
       action: permission.action,
       inverted: permission.inverted,
-      deprecated: schema.isFlagged(permission.resourceType, permission.action),
+      deprecated: schema.needsCleanUp(permission.resourceType, permission.action),
     })),
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,

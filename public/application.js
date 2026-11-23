@@ -65,6 +65,14 @@
     count.className = 'hint';
     count.textContent = plural(template.permissionCount, 'Permission', 'Permissions');
     head.append(title, count);
+    if (template.deprecatedPermissions > 0) {
+      head.append(
+        badge(
+          plural(template.deprecatedPermissions, 'Permission', 'Permissions') + ' on Deprecated entries won’t be copied',
+          'warn',
+        ),
+      );
+    }
     if (template.description) {
       const description = document.createElement('span');
       description.className = 'description';
@@ -153,12 +161,18 @@
     toggle.setAttribute('aria-busy', 'true');
     try {
       const firstTime = enable && !current.templatesCopied;
+      const skipped = current.roleTemplates.reduce(function (sum, template) {
+        return sum + template.deprecatedPermissions;
+      }, 0);
       const updated = await Sentinel.api(base + '/' + (enable ? 'enable' : 'disable'), { method: 'POST' });
       render(updated);
       let done = current.name + ' disabled. Its Roles are kept.';
       if (enable) {
         done = firstTime
-          ? current.name + ' enabled with ' + plural(updated.roles.length, 'default Role', 'default Roles') + '.'
+          ? current.name +
+            ' enabled with ' +
+            plural(updated.roles.length, 'default Role', 'default Roles') +
+            (skipped > 0 ? ', leaving out ' + plural(skipped, 'Permission', 'Permissions') + ' on Deprecated entries.' : '.')
           : current.name + ' enabled again with your existing Roles.';
       }
       showMessage(message, done, 'success');

@@ -41,7 +41,7 @@ export function toRoleView(role: RoleWithPermissions, schema: SchemaIndex): Role
       action: permission.action,
       inverted: permission.inverted,
       conditions: permission.conditions,
-      deprecated: schema.isFlagged(permission.resourceType, permission.action),
+      deprecated: schema.needsCleanUp(permission.resourceType, permission.action),
     })),
     createdAt: role.createdAt,
     updatedAt: role.updatedAt,

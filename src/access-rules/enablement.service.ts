@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Application, Enablement } from '@prisma/client';
+import { lockApplication } from '../applications/application-lock';
 import { RoleTemplatesService } from '../applications/role-templates.service';
 import { loadSchemaIndex, loadSchemaIndexes } from '../applications/schema-index';
 import type { AuditEventType } from '../audit/audit-event-types';
@@ -36,6 +37,8 @@ export interface TemplatePreview {
   readonly name: string;
   readonly description: string;
   readonly permissionCount: number;
+  /** Permissions on Deprecated entries, which the copy leaves out. */
+  readonly deprecatedPermissions: number;
 }
 
 export interface TenantApplicationDetail extends TenantApplication {
@@ -57,27 +60,38 @@ async function lockTenant(tx: ScopedTransaction, tenantId: string): Promise<void
   await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE`;
 }
 
+/** What an Enablement change starts from, with its locks held. */
+interface EnablementChange {
+  readonly application: Application;
+  readonly existing: Enablement | null;
+}
+
 /**
- * Holds the Application row against changes until the transaction ends. Role Template and Schema
- * changes lock it FOR UPDATE, so the templates and Deprecations read here can't change mid-copy.
+ * Locks the Tenant row, then holds the Application row against Role Template and Schema changes
+ * (which lock it FOR UPDATE), so the templates and Deprecations read can't change mid-copy. Returns
+ * the Application and the Tenant's Enablement of it, if any.
  */
-async function shareLockApplication(tx: ScopedTransaction, applicationId: string): Promise<Application> {
-  await tx.$queryRaw`SELECT id FROM applications WHERE id = ${applicationId}::uuid FOR SHARE`;
-  const application = await tx.application.findUnique({ where: { id: applicationId } });
-  if (!application) throw new NotFoundException('Application not found');
-  return application;
+async function beginEnablementChange(
+  tx: ScopedTransaction,
+  tenantId: string,
+  applicationId: string,
+): Promise<EnablementChange> {
+  await lockTenant(tx, tenantId);
+  const application = await lockApplication(tx, applicationId, 'share');
+  const existing = await tx.enablement.findUnique({ where: { tenantId_applicationId: { tenantId, applicationId } } });
+  return { application, existing };
 }
 
 function toTenantApplication(
   application: Application,
-  enablement: Enablement | undefined,
+  enablement: Enablement | null,
   deprecatedPermissions: number,
 ): TenantApplication {
   return {
     id: application.id,
     name: application.name,
     registeredAt: application.createdAt,
-    enabled: enablement !== undefined && enablement.disabledAt === null,
+    enabled: enablement !== null && enablement.disabledAt === null,
     enabledAt: enablement?.enabledAt ?? null,
     disabledAt: enablement?.disabledAt ?? null,
     deprecatedPermissions,
@@ -108,7 +122,7 @@ export class EnablementService {
       return toPage(rows, window, (row) =>
         toTenantApplication(
           row,
-          enablements.find((enablement) => enablement.applicationId === row.id),
+          enablements.find((enablement) => enablement.applicationId === row.id) ?? null,
           deprecated.get(row.id) ?? 0,
         ),
       );
@@ -126,9 +140,7 @@ export class EnablementService {
    */
   async enable(tenantId: string, actorUserId: string, applicationId: string): Promise<TenantApplicationDetail> {
     return this.scoped.inTenant(tenantId, async (tx) => {
-      await lockTenant(tx, tenantId);
-      const application = await shareLockApplication(tx, applicationId);
-      const existing = await tx.enablement.findUnique({ where: { tenantId_applicationId: { tenantId, applicationId } } });
+      const { application, existing } = await beginEnablementChange(tx, tenantId, applicationId);
       const now = new Date();
 
       if (existing) {
@@ -148,7 +160,7 @@ export class EnablementService {
       const templates = await this.templates.templatesToCopy(tx, applicationId);
       let permissionsSkipped = 0;
       for (const template of templates) {
-        const usable = template.permissions.filter((rule) => !schema.isFlagged(rule.resourceType, rule.action));
+        const usable = template.permissions.filter((rule) => !schema.needsCleanUp(rule.resourceType, rule.action));
         permissionsSkipped += template.permissions.length - usable.length;
         await tx.role.create({
           data: {
@@ -177,9 +189,7 @@ export class EnablementService {
    */
   async disable(tenantId: string, actorUserId: string, applicationId: string): Promise<TenantApplicationDetail> {
     return this.scoped.inTenant(tenantId, async (tx) => {
-      await lockTenant(tx, tenantId);
-      const application = await shareLockApplication(tx, applicationId);
-      const existing = await tx.enablement.findUnique({ where: { tenantId_applicationId: { tenantId, applicationId } } });
+      const { application, existing } = await beginEnablementChange(tx, tenantId, applicationId);
       if (existing && existing.disabledAt === null) {
         await tx.enablement.update({ where: { id: existing.id }, data: { disabledAt: new Date() } });
         const roles = await tx.role.count({ where: { tenantId, applicationId } });
@@ -201,28 +211,30 @@ export class EnablementService {
       include: ROLE_WITH_PERMISSIONS,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
+    const schema = await loadSchemaIndex(tx, applicationId);
     const previews = enablement
       ? []
       : (await this.templates.templatesToCopy(tx, applicationId)).map((template) => ({
           name: template.name,
           description: template.description,
           permissionCount: template.permissions.length,
+          deprecatedPermissions: template.permissions.filter((rule) => schema.needsCleanUp(rule.resourceType, rule.action))
+            .length,
         }));
 
-    const schema = await loadSchemaIndex(tx, applicationId);
     const roleViews = roles.map((role) => toRoleView(role, schema));
     const deprecated = roleViews.reduce(
       (sum, role) => sum + role.permissions.filter((permission) => permission.deprecated).length,
       0,
     );
     return {
-      ...toTenantApplication(application, enablement ?? undefined, deprecated),
+      ...toTenantApplication(application, enablement, deprecated),
       resourceTypes: application.resourceTypes.map((resourceType) => ({
         name: resourceType.name,
         deprecated: resourceType.deprecatedAt !== null,
         actions: resourceType.actions.map((action) => ({
           name: action.name,
-          deprecated: resourceType.deprecatedAt !== null || action.deprecatedAt !== null,
+          deprecated: schema.needsCleanUp(resourceType.name, action.name),
         })),
       })),
       templatesCopied: enablement !== null,
@@ -249,12 +261,13 @@ export class EnablementService {
       _count: { _all: true },
     });
     const schemas = await loadSchemaIndexes(tx, applicationIds);
-    const applicationOfRole = new Map(roles.map((role) => [role.id, role.applicationId] as const));
+    const applicationOfRole = new Map<string, string>();
+    for (const role of roles) applicationOfRole.set(role.id, role.applicationId);
     const counts = new Map<string, number>();
     for (const group of groups) {
       const applicationId = applicationOfRole.get(group.roleId);
       const schema = applicationId === undefined ? undefined : schemas.get(applicationId);
-      if (applicationId === undefined || !schema?.isFlagged(group.resourceType, group.action)) continue;
+      if (applicationId === undefined || !schema?.needsCleanUp(group.resourceType, group.action)) continue;
       counts.set(applicationId, (counts.get(applicationId) ?? 0) + group._count._all);
     }
     return counts;

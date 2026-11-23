@@ -181,7 +181,6 @@
     button.setAttribute('aria-busy', 'true');
     try {
       const updated = await work();
-      if (updated === false) return;
       if (updated) templates.replace(updated);
       else await templates.reload();
       showMessage(message, done, 'success');

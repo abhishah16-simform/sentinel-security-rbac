@@ -32,14 +32,14 @@ export class SchemaIndex {
     return `${resourceType}\u0000${action}`;
   }
 
-  usage(resourceType: string, action: string): SchemaUsage {
+  private usage(resourceType: string, action: string): SchemaUsage {
     const deprecated = this.deprecatedByKey.get(SchemaIndex.key(resourceType, action));
     if (deprecated === undefined) return 'unknown';
     return deprecated ? 'deprecated' : 'active';
   }
 
   /** True when a Permission on this pair needs cleaning up: Deprecated, or no longer in the Schema. */
-  isFlagged(resourceType: string, action: string): boolean {
+  needsCleanUp(resourceType: string, action: string): boolean {
     return this.usage(resourceType, action) !== 'active';
   }
 
@@ -67,9 +67,9 @@ export async function loadSchemaIndexes(
     where: { applicationId: { in: [...applicationIds] } },
     include: { actions: true },
   });
-  return new Map(
-    applicationIds.map((id) => [id, new SchemaIndex(rows.filter((row) => row.applicationId === id))] as const),
-  );
+  const indexes = new Map<string, SchemaIndex>();
+  for (const id of applicationIds) indexes.set(id, new SchemaIndex(rows.filter((row) => row.applicationId === id)));
+  return indexes;
 }
 
 export async function loadSchemaIndex(client: SchemaReader, applicationId: string): Promise<SchemaIndex> {
