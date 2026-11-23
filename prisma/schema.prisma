@@ -439,6 +439,8 @@ model RoleAssignment {
   revokedBy   User?       @relation("RoleAssignmentRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
+  /// Access Reviews snapshot the active assignments of one Application.
+  @@index([tenantId, applicationId])
   @@index([membershipId])
   @@index([roleId])
   @@map("role_assignments")

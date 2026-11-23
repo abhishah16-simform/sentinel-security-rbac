@@ -1,12 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { loadSchemaIndexes, SchemaIndex } from '../applications/schema-index';
-import type { AuditEventType } from '../audit/audit-event-types';
-import { AuditLog, type AuditPayload } from '../audit/audit-log.service';
+import { AuditLog } from '../audit/audit-log.service';
 import { type Page, pageWindow, toPage } from '../common/pagination';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import type { RoleAssignmentListQuery, RoleAssignmentStatus } from './dto/role-assignment.dto';
-import { activeAssignmentWhere, END_REASON_LABELS } from './role-assignment-ending';
+import {
+  activeAssignmentWhere,
+  END_REASON_LABELS,
+  type EndReasonLabel,
+  recordAssignmentEvent,
+  revocationData,
+} from './role-assignment-ending';
 import { ROLE_WITH_PERMISSIONS, type PermissionView, toRoleView } from './role-view';
 import { lockTenant } from './tenant-lock';
 
@@ -39,7 +44,7 @@ export interface RoleAssignmentView {
   readonly revokedAt: Date | null;
   readonly revokedByName: string | null;
   /** Why it was revoked: revoked (by a Tenant Admin), role-deleted or membership-ended. */
-  readonly endReason: string | null;
+  readonly endReason: EndReasonLabel | null;
 }
 
 /** One Permission a Membership holds through one of its active Role Assignments. */
@@ -103,6 +108,16 @@ function displayName(user: UserName | null): string | null {
   return [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
 }
 
+function toMember(row: { readonly membershipId: string | null; readonly userId: string; readonly user: UserName }): AssignedMember {
+  return {
+    membershipId: row.membershipId,
+    userId: row.userId,
+    email: row.user.email,
+    firstName: row.user.firstName,
+    lastName: row.user.lastName,
+  };
+}
+
 function statusOf(row: { readonly revokedAt: Date | null; readonly expiresAt: Date | null }, now: Date): RoleAssignmentStatus {
   if (row.revokedAt !== null) return 'revoked';
   return row.expiresAt !== null && row.expiresAt <= now ? 'expired' : 'active';
@@ -125,13 +140,7 @@ function toView(row: AssignmentRow, enabled: ReadonlySet<string>, now: Date): Ro
   return {
     id: row.id,
     status: statusOf(row, now),
-    member: {
-      membershipId: row.membershipId,
-      userId: row.userId,
-      email: row.user.email,
-      firstName: row.user.firstName,
-      lastName: row.user.lastName,
-    },
+    member: toMember(row),
     role: { id: row.role?.id ?? null, name: row.role?.name ?? row.roleName },
     application: { id: row.application.id, name: row.application.name, enabled: enabled.has(row.applicationId) },
     expiresAt: row.expiresAt,
@@ -222,9 +231,8 @@ export class RoleAssignmentsService {
         where: { tenantId, membershipId: membership.id, ...activeAssignmentWhere(now) },
         select: { roleId: true },
       });
-      const who = displayName(membership.user) ?? membership.user.email;
       if (active.some((assignment) => assignment.roleId === role.id)) {
-        throw new ConflictException(`${who} already has the Role "${role.name}". Revoke it first to change its expiry time.`);
+        throw new ConflictException(`${displayName(membership.user)} already has the Role "${role.name}". Revoke it first to change its expiry time.`);
       }
       if (active.length >= MAX_ACTIVE_ASSIGNMENTS_PER_MEMBERSHIP) {
         throw new ConflictException(`A Membership can hold at most ${MAX_ACTIVE_ASSIGNMENTS_PER_MEMBERSHIP} active Role Assignments`);
@@ -241,9 +249,14 @@ export class RoleAssignmentsService {
           assignedByUserId: actorUserId,
         },
       });
-      await this.recordIn(tx, 'role_assignment.created', actorUserId, created, role.name, role.application.name, {
-        expiresAt: expiresAt === null ? null : expiresAt.toISOString(),
-      });
+      await recordAssignmentEvent(
+        tx,
+        this.audit,
+        'role_assignment.created',
+        actorUserId,
+        { ...created, roleName: role.name, applicationName: role.application.name },
+        { expiresAt: expiresAt === null ? null : expiresAt.toISOString() },
+      );
       return this.viewIn(tx, tenantId, created.id);
     });
   }
@@ -257,13 +270,15 @@ export class RoleAssignmentsService {
       const status = statusOf(row, now);
       if (status === 'revoked') throw new ConflictException('This Role Assignment is already revoked');
       if (status === 'expired') throw new ConflictException('This Role Assignment has already expired and gives no access');
-      await tx.roleAssignment.update({
-        where: { id: row.id },
-        data: { revokedAt: now, revokedByUserId: actorUserId, endReason: 'REVOKED' },
-      });
-      await this.recordIn(tx, 'role_assignment.revoked', actorUserId, row, row.role?.name ?? row.roleName, row.application.name, {
-        reason: END_REASON_LABELS.REVOKED,
-      });
+      await tx.roleAssignment.update({ where: { id: row.id }, data: revocationData(now, actorUserId, 'REVOKED') });
+      await recordAssignmentEvent(
+        tx,
+        this.audit,
+        'role_assignment.revoked',
+        actorUserId,
+        { ...row, roleName: row.role?.name ?? row.roleName, applicationName: row.application.name },
+        { reason: END_REASON_LABELS.REVOKED },
+      );
       return this.viewIn(tx, tenantId, row.id);
     });
   }
@@ -283,54 +298,10 @@ export class RoleAssignmentsService {
       const enabled = await enabledApplications(tx, tenantId, applicationIds);
       const schemas = await loadSchemaIndexes(tx, applicationIds);
 
-      const byApplication = new Map<string, { name: string; permissions: Omit<EffectivePermission, 'overriddenByDeny'>[] }>();
-      for (const row of rows) {
-        // An active assignment always has its Role: deleting a Role revokes its assignments first.
-        if (!row.role) continue;
-        const entry = byApplication.get(row.applicationId) ?? { name: row.application.name, permissions: [] };
-        byApplication.set(row.applicationId, entry);
-        const view = toRoleView(row.role, schemas.get(row.applicationId) ?? new SchemaIndex([]));
-        for (const permission of view.permissions) {
-          entry.permissions.push({
-            ...permission,
-            role: { id: row.role.id, name: row.role.name },
-            roleAssignmentId: row.id,
-            expiresAt: row.expiresAt,
-          });
-        }
-      }
-
-      const applications = [...byApplication.entries()]
-        .map(([id, entry]): EffectiveApplication => {
-          const hardDenies = new Set(
-            entry.permissions
-              .filter((permission) => permission.inverted && permission.conditions === null)
-              .map((permission) => `${permission.resourceType}\u0000${permission.action}`),
-          );
-          const permissions = entry.permissions
-            .map((permission) => ({
-              ...permission,
-              overriddenByDeny: !permission.inverted && hardDenies.has(`${permission.resourceType}\u0000${permission.action}`),
-            }))
-            .sort(
-              (a, b) =>
-                a.resourceType.localeCompare(b.resourceType) ||
-                a.action.localeCompare(b.action) ||
-                Number(a.inverted) - Number(b.inverted) ||
-                a.role.name.localeCompare(b.role.name),
-            );
-          return { id, name: entry.name, enabled: enabled.has(id), permissions };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const applications = toEffectiveApplications(rows, schemas, enabled);
 
       return {
-        member: {
-          membershipId: membership.id,
-          userId: membership.userId,
-          email: membership.user.email,
-          firstName: membership.user.firstName,
-          lastName: membership.user.lastName,
-        },
+        member: toMember({ ...membership, membershipId: membership.id }),
         isTenantAdmin: membership.isTenantAdmin,
         asOf: now,
         assignments: rows.map((row) => toView({ ...row, role: row.role && { id: row.role.id, name: row.role.name } }, enabled, now)),
@@ -349,38 +320,6 @@ export class RoleAssignmentsService {
     const row = await this.findIn(tx, tenantId, assignmentId);
     return toView(row, await enabledApplications(tx, tenantId, [row.applicationId]), new Date());
   }
-
-  /** Assignment changes join the Tenant's chain with the User as target, so the Audit Log's user filter finds them. */
-  private recordIn(
-    tx: ScopedTransaction,
-    eventType: AuditEventType,
-    actorUserId: string,
-    assignment: {
-      readonly id: string;
-      readonly tenantId: string;
-      readonly userId: string;
-      readonly membershipId: string | null;
-      readonly applicationId: string;
-    },
-    roleName: string,
-    applicationName: string,
-    payload: AuditPayload,
-  ): Promise<void> {
-    return this.audit.recordIn(tx, {
-      tenantId: assignment.tenantId,
-      eventType,
-      actorUserId,
-      target: { type: 'user', id: assignment.userId },
-      applicationId: assignment.applicationId,
-      payload: {
-        roleAssignmentId: assignment.id,
-        membershipId: assignment.membershipId,
-        role: roleName,
-        application: applicationName,
-        ...payload,
-      },
-    });
-  }
 }
 
 async function enabledApplications(
@@ -395,4 +334,57 @@ async function enabledApplications(
     select: { applicationId: true },
   });
   return new Set(enablements.map((enablement) => enablement.applicationId));
+}
+
+type EffectiveRow = Prisma.RoleAssignmentGetPayload<{
+  include: { application: { select: { name: true } }; role: { include: typeof ROLE_WITH_PERMISSIONS } };
+}>;
+
+/** "Invoice read": the pair a Deny Rule and an allow must share for the deny to always win. */
+function ruleKey(permission: { readonly resourceType: string; readonly action: string }): string {
+  return `${permission.resourceType}\u0000${permission.action}`;
+}
+
+/**
+ * Groups the Permissions of a Membership's active assignments by Application, sorted by Application
+ * name, then Resource Type, Action, allow before deny and Role name.
+ */
+function toEffectiveApplications(
+  rows: readonly EffectiveRow[],
+  schemas: ReadonlyMap<string, SchemaIndex>,
+  enabled: ReadonlySet<string>,
+): EffectiveApplication[] {
+  const byApplication = new Map<string, { name: string; permissions: Omit<EffectivePermission, 'overriddenByDeny'>[] }>();
+  for (const row of rows) {
+    // An active assignment always has its Role (activeAssignmentWhere).
+    if (!row.role) continue;
+    const entry = byApplication.get(row.applicationId) ?? { name: row.application.name, permissions: [] };
+    byApplication.set(row.applicationId, entry);
+    const view = toRoleView(row.role, schemas.get(row.applicationId) ?? new SchemaIndex([]));
+    for (const permission of view.permissions) {
+      entry.permissions.push({
+        ...permission,
+        role: { id: row.role.id, name: row.role.name },
+        roleAssignmentId: row.id,
+        expiresAt: row.expiresAt,
+      });
+    }
+  }
+  return [...byApplication.entries()]
+    .map(([id, entry]): EffectiveApplication => {
+      const hardDenies = new Set(
+        entry.permissions.filter((permission) => permission.inverted && permission.conditions === null).map(ruleKey),
+      );
+      const permissions = entry.permissions
+        .map((permission) => ({ ...permission, overriddenByDeny: !permission.inverted && hardDenies.has(ruleKey(permission)) }))
+        .sort(
+          (a, b) =>
+            a.resourceType.localeCompare(b.resourceType) ||
+            a.action.localeCompare(b.action) ||
+            Number(a.inverted) - Number(b.inverted) ||
+            a.role.name.localeCompare(b.role.name),
+        );
+      return { id, name: entry.name, enabled: enabled.has(id), permissions };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
