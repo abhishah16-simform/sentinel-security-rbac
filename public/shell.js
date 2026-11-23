@@ -41,6 +41,7 @@
     '<div class="nav-label">Access control</div>' +
     navItem('/roles.html', 'key', 'Roles') +
     navItem('/permissions.html', 'lock', 'Permissions') +
+    navItem('/role-assignments.html', 'shieldCheck', 'Role assignments') +
     navItem('/applications.html', 'grid', 'Applications') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +

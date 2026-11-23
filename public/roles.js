@@ -54,7 +54,7 @@
     button.setAttribute('aria-label', 'Delete Role ' + role.name);
     button.addEventListener('click', async function () {
       const prompt =
-        'Delete Role "' + role.name + '" and its ' + plural(role.permissions.length, 'Permission', 'Permissions') + '?';
+        'Delete Role "' + role.name + '" and its ' + plural(role.permissions.length, 'Permission', 'Permissions') + '? Anyone holding it loses it at once.';
       if (!window.confirm(prompt)) return;
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');

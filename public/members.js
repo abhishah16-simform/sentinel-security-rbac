@@ -57,9 +57,15 @@
   function memberRow(member) {
     const name = Shell.fullName(member) || member.email;
     const isYou = member.userId === me.id;
+    const access = document.createElement('a');
+    access.className = 'button ghost small';
+    access.href = '/role-assignments.html?membership=' + encodeURIComponent(member.membershipId);
+    access.textContent = 'Roles';
+    access.setAttribute('aria-label', 'Roles and effective Permissions of ' + name);
     const actions = document.createElement('span');
     actions.className = 'actions';
     actions.append(
+      access,
       actionButton(
         member.isTenantAdmin ? 'Remove admin' : 'Make admin',
         'ghost',

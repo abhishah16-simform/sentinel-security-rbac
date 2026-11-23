@@ -36,6 +36,9 @@ model User {
   refreshChains           RefreshChain[]
   memberships             Membership[]
   invitationsSent         Invitation[]
+  roleAssignments         RoleAssignment[]         @relation("RoleAssignmentUser")
+  roleAssignmentsMade     RoleAssignment[]         @relation("RoleAssignmentAssignedBy")
+  roleAssignmentsRevoked  RoleAssignment[]         @relation("RoleAssignmentRevokedBy")
 
   @@map("users")
 }
@@ -156,13 +159,14 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships   Membership[]
-  invitations   Invitation[]
-  refreshChains RefreshChain[]
-  auditEvents   AuditEvent[]
-  enablements   Enablement[]
-  roles         Role[]
-  permissions   Permission[]
+  memberships     Membership[]
+  invitations     Invitation[]
+  refreshChains   RefreshChain[]
+  auditEvents     AuditEvent[]
+  enablements     Enablement[]
+  roles           Role[]
+  permissions     Permission[]
+  roleAssignments RoleAssignment[]
 
   @@map("tenants")
 }
@@ -176,9 +180,10 @@ model Membership {
   isTenantAdmin Boolean  @default(false)
   createdAt     DateTime @default(now())
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  refreshChains RefreshChain[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshChains   RefreshChain[]
+  roleAssignments RoleAssignment[]
 
   @@unique([tenantId, userId])
   @@index([userId])
@@ -246,10 +251,11 @@ model Application {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  resourceTypes ResourceType[]
-  roleTemplates RoleTemplate[]
-  enablements   Enablement[]
-  roles         Role[]
+  resourceTypes   ResourceType[]
+  roleTemplates   RoleTemplate[]
+  enablements     Enablement[]
+  roles           Role[]
+  roleAssignments RoleAssignment[]
 
   @@map("applications")
 }
@@ -355,9 +361,10 @@ model Role {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  application Application  @relation(fields: [applicationId], references: [id], onDelete: Restrict)
-  permissions Permission[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application     Application      @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  permissions     Permission[]
+  roleAssignments RoleAssignment[]
 
   @@unique([tenantId, applicationId, name])
   @@index([tenantId, applicationId])
@@ -385,6 +392,56 @@ model Permission {
   @@index([roleId])
   @@index([tenantId])
   @@map("permissions")
+}
+
+/// Why a Role Assignment was revoked.
+enum RoleAssignmentEndReason {
+  /// A Tenant Admin revoked it.
+  REVOKED
+  /// Its Role was deleted.
+  ROLE_DELETED
+  /// Its Membership was removed or left.
+  MEMBERSHIP_ENDED
+}
+
+/// Tenant-owned (RLS). A Role given to a Membership across the whole Tenant, optionally until
+/// expiresAt. Never deleted: revoking sets revokedAt, and the row outlives its Role and Membership
+/// (both SET NULL; they are revoked in the same transaction first), keeping the User, Application and
+/// Role name for reports and Access Reviews. Active means not revoked and expiresAt empty or later
+/// than now (activeAssignmentWhere); an expired one is never marked, it simply stops counting.
+model RoleAssignment {
+  id               String                   @id @default(uuid()) @db.Uuid
+  tenantId         String                   @db.Uuid
+  /// Null once the Membership is gone.
+  membershipId     String?                  @db.Uuid
+  /// The User the Membership belongs to; kept after the Membership ends.
+  userId           String                   @db.Uuid
+  /// Null once the Role is deleted.
+  roleId           String?                  @db.Uuid
+  applicationId    String                   @db.Uuid
+  /// The Role's name when assigned, updated to its last name when the Role is deleted.
+  roleName         String
+  /// Null for a permanent assignment.
+  expiresAt        DateTime?
+  assignedByUserId String?                  @db.Uuid
+  revokedAt        DateTime?
+  revokedByUserId  String?                  @db.Uuid
+  /// Set together with revokedAt.
+  endReason        RoleAssignmentEndReason?
+  createdAt        DateTime                 @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership  Membership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  user        User        @relation("RoleAssignmentUser", fields: [userId], references: [id], onDelete: Restrict)
+  role        Role?       @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  assignedBy  User?       @relation("RoleAssignmentAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+  revokedBy   User?       @relation("RoleAssignmentRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([membershipId])
+  @@index([roleId])
+  @@map("role_assignments")
 }
 
 // ---------------------------------------------------------------------------

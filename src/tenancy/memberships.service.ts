@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Membership, Prisma } from '@prisma/client';
+import { endRoleAssignments } from '../access-rules/role-assignment-ending';
 import type { AuditEventType } from '../audit/audit-event-types';
 import { AuditLog } from '../audit/audit-log.service';
 import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
@@ -77,7 +78,7 @@ export class MembershipsService {
       await lockTenant(tx, tenantId);
       const membership = await this.findIn(tx, tenantId, membershipId);
       await assertAnotherAdmin(tx, membership);
-      await tx.membership.delete({ where: { id: membership.id } });
+      await this.endIn(tx, membership, actorUserId);
       const eventType = membership.userId === actorUserId ? 'membership.left' : 'membership.removed';
       await this.recordIn(tx, membership, eventType, actorUserId);
     });
@@ -110,9 +111,18 @@ export class MembershipsService {
       const membership = await tx.membership.findUnique({ where: { tenantId_userId: { tenantId, userId } } });
       if (!membership) throw new NotFoundException('You are not a member of that Tenant.');
       await assertAnotherAdmin(tx, membership);
-      await tx.membership.delete({ where: { id: membership.id } });
+      await this.endIn(tx, membership, userId);
       await this.recordIn(tx, membership, 'membership.left', userId);
     });
+  }
+
+  /**
+   * Deletes a Membership after revoking its active Role Assignments, which stay recorded (with the
+   * User) once their membershipId is set to null. Call after lockTenant.
+   */
+  private async endIn(tx: ScopedTransaction, membership: Membership, actorUserId: string): Promise<void> {
+    await endRoleAssignments(tx, this.audit, membership.tenantId, { membershipId: membership.id }, 'MEMBERSHIP_ENDED', actorUserId);
+    await tx.membership.delete({ where: { id: membership.id } });
   }
 
   private async findIn(tx: ScopedTransaction, tenantId: string, membershipId: string): Promise<Membership> {

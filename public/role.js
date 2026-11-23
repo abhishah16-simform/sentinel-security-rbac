@@ -150,7 +150,8 @@
   });
 
   deleteButton.addEventListener('click', async function () {
-    const prompt = 'Delete Role "' + current.name + '" and its ' + plural(current.permissions.length, 'Permission', 'Permissions') + '?';
+    const prompt =
+      'Delete Role "' + current.name + '" and its ' + plural(current.permissions.length, 'Permission', 'Permissions') + '? Anyone holding it loses it at once.';
     if (!window.confirm(prompt)) return;
     deleteButton.disabled = true;
     deleteButton.setAttribute('aria-busy', 'true');

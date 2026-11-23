@@ -50,6 +50,8 @@ export const AUDIT_EVENT_TYPES = {
   'role.deleted': 'Deleted Role',
   'role.permission_added': 'Added Permission to Role',
   'role.permission_removed': 'Removed Permission from Role',
+  'role_assignment.created': 'Assigned Role',
+  'role_assignment.revoked': 'Revoked Role Assignment',
 } as const;
 
 export type AuditEventType = keyof typeof AUDIT_EVENT_TYPES;

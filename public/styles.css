@@ -1232,13 +1232,15 @@ button.secondary:hover,
   color: var(--text);
 }
 
-button.ghost {
+button.ghost,
+.button.ghost {
   color: var(--text-2);
   background: transparent;
   box-shadow: none;
 }
 
-button.ghost:hover {
+button.ghost:hover,
+.button.ghost:hover {
   background: var(--surface-3);
   color: var(--text);
 }

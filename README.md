@@ -141,6 +141,14 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - The JSON body parser refuses any `__proto__` key (`src/common/json-body.ts`): copying a body into a DTO drops such keys silently, which would let part of a Condition vanish and widen its Permission.
 - Every change is recorded in the Tenant's chain (`role.created`, `role.updated`, `role.deleted`, `role.permission_added`, `role.permission_removed`) with the Permission written out, Condition included. [`http/roles-permissions.http`](http/roles-permissions.http) walks through it.
 
+## Role Assignments
+
+- Tenant Admins give Roles to Memberships under `/v1/tenants/current/role-assignments` (list newest first, filterable by `membershipId`, `roleId`, `applicationId` and `status`; `POST` with `{ membershipId, roleId, expiresAt? }`; `GET :id`; `POST :id/revoke`). `GET /v1/tenants/current/memberships/:id/effective-permissions` shows every Permission a Membership holds now, by Application, flagging allows that an unconditional deny of the same Action always beats. The console page is `/role-assignments.html`, linked from each member on `/members.html`.
+- A Role Assignment applies across the whole Tenant. Assigning needs the Role's Application enabled (409 otherwise), and a Membership can't hold the same Role twice at once. `expiresAt` (with a time zone, in the future, within 10 years) makes it a Temporary Role Assignment.
+- `role_assignments` is Tenant-owned (RLS) and rows are never deleted. Active means not revoked and `expiresAt` empty or later than now (`activeAssignmentWhere()` in `src/access-rules/role-assignment-ending.ts`); every reader that decides access applies it itself, so an assignment stops counting at exactly its expiry time and nothing marks it expired.
+- Revoking sets `revokedAt` and `endReason`. Deleting a Role or removing a Membership (or leaving) revokes its active assignments in the same transaction (`endReason` `ROLE_DELETED` or `MEMBERSHIP_ENDED`), then the foreign key is set to null; the row keeps the User, Application and Role name for reports and Access Reviews.
+- Every change is recorded in the Tenant's chain (`role_assignment.created`, `role_assignment.revoked` with `reason`), targeting the User so the Audit Log's user filter finds it. [`http/role-assignments.http`](http/role-assignments.http) walks through it.
+
 ## Audit Log
 
 - Every authentication event and admin change goes through one writer (`AuditLog`), in the same transaction as the change it records. See `src/audit/audit-event-types.ts` for the event types.

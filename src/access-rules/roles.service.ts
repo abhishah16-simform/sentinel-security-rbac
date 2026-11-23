@@ -10,6 +10,7 @@ import { type Page, type PageQuery, pageWindow, toPage } from '../common/paginat
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import { parseConditions } from './conditions';
 import { MAX_ROLE_PERMISSIONS } from './dto/role.dto';
+import { endRoleAssignments } from './role-assignment-ending';
 import { ROLE_WITH_PERMISSIONS, type RoleView, toRoleView } from './role-view';
 import { SCHEMA_INCLUDE, type TenantResourceTypeView, toSchemaView } from './schema-view';
 import { lockTenant } from './tenant-lock';
@@ -229,14 +230,20 @@ export class RolesService {
     });
   }
 
-  /** Delete a Role with its Permissions. */
+  /**
+   * Delete a Role with its Permissions. Its active Role Assignments are revoked first and, like its
+   * ended ones, kept with the Role's last name once their roleId is set to null.
+   */
   async remove(tenantId: string, actorUserId: string, roleId: string): Promise<void> {
     await this.scoped.inTenant(tenantId, async (tx) => {
       await lockTenant(tx, tenantId);
       const role = await this.findIn(tx, tenantId, roleId);
+      const revoked = await endRoleAssignments(tx, this.audit, tenantId, { roleId }, 'ROLE_DELETED', actorUserId);
+      await tx.roleAssignment.updateMany({ where: { tenantId, roleId }, data: { roleName: role.name } });
       await tx.role.delete({ where: { id: roleId } });
       await this.recordIn(tx, 'role.deleted', actorUserId, role, role.application.name, {
         permissions: role.permissions.map(describePermission).join(', '),
+        revokedRoleAssignments: revoked,
       });
     });
   }

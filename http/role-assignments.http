@@ -1,0 +1,67 @@
+# Role Assignments (ticket 10).
+# Needs a Tenant Admin access token with an Active Tenant (see http/tenants.http), a second Membership
+# (see http/invitations.http) and a Role in an enabled Application (see http/roles-permissions.http).
+
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token
+@membershipId = paste-membership-id
+@roleId = paste-role-id
+@assignmentId = paste-role-assignment-id
+
+### Give a Role to a Membership across the whole Tenant, for good.
+### 404 for an unknown Membership or Role; 409 if the Application isn't enabled or the Membership
+### already holds the Role actively.
+POST {{baseUrl}}/v1/tenants/current/role-assignments
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "roleId": "{{roleId}}" }
+
+### A Temporary Role Assignment: expiresAt needs a time zone, must be in the future and within 10 years.
+### It stops giving access at exactly that time; nothing has to run for that to happen.
+POST {{baseUrl}}/v1/tenants/current/role-assignments
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "roleId": "{{roleId}}", "expiresAt": "2026-12-31T17:00:00Z" }
+
+### 400: an expiry in the past
+POST {{baseUrl}}/v1/tenants/current/role-assignments
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "roleId": "{{roleId}}", "expiresAt": "2020-01-01T00:00:00Z" }
+
+### The Tenant's Role Assignments, newest first (paginated: limit, cursor).
+### Filters: membershipId, roleId, applicationId, status = active | expired | revoked (omit for all).
+GET {{baseUrl}}/v1/tenants/current/role-assignments?status=active&membershipId={{membershipId}}
+Authorization: Bearer {{tenantToken}}
+
+### One Role Assignment
+GET {{baseUrl}}/v1/tenants/current/role-assignments/{{assignmentId}}
+Authorization: Bearer {{tenantToken}}
+
+### Revoke: access ends at once; the row is kept with status "revoked" and endReason "revoked".
+### 409 if it is already revoked or has expired.
+POST {{baseUrl}}/v1/tenants/current/role-assignments/{{assignmentId}}/revoke
+Authorization: Bearer {{tenantToken}}
+
+### What the Membership can do now across all its active Roles, by Application. An allow that an
+### unconditional deny of the same Action always beats is flagged overriddenByDeny.
+GET {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}/effective-permissions
+Authorization: Bearer {{tenantToken}}
+
+### Deleting a Role revokes its active assignments (endReason "role-deleted"); they stay listed
+### with the Role's last name and role.id null.
+DELETE {{baseUrl}}/v1/tenants/current/roles/{{roleId}}
+Authorization: Bearer {{tenantToken}}
+
+### Removing a Membership (or the member leaving) revokes its active assignments
+### (endReason "membership-ended"); they stay listed with member.membershipId null.
+DELETE {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}
+Authorization: Bearer {{tenantToken}}
+
+### Every change is in the Tenant's chain: role_assignment.created and role_assignment.revoked
+### (payload.reason: revoked, role-deleted or membership-ended), targeting the User.
+GET {{baseUrl}}/v1/audit-events?eventType=role_assignment.revoked
+Authorization: Bearer {{tenantToken}}
