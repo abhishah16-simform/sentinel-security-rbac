@@ -1,0 +1,55 @@
+# Platform Admin and Application registry (ticket 07).
+# Create a Platform Admin first (after npm run build):
+#   npm run platform-admin:create -- --email ops@example.com --first-name Ops --last-name Admin
+# then log in as them with http/auth.http. Platform Admins have no Tenant, so no switch is needed.
+
+@baseUrl = http://localhost:9800
+@accessToken = paste-platform-admin-access-token
+@applicationId = paste-application-id
+@resourceTypeId = paste-resource-type-id
+@actionId = paste-action-id
+
+### Register an Application. The response holds clientSecret: shown this once, stored only as a hash.
+POST {{baseUrl}}/v1/platform/applications
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Billing", "allowedOrigins": ["https://billing.example.com", "http://localhost:5173"] }
+
+### Applications, newest first (paginated: limit, cursor)
+GET {{baseUrl}}/v1/platform/applications
+Authorization: Bearer {{accessToken}}
+
+### One Application with its Application Schema
+GET {{baseUrl}}/v1/platform/applications/{{applicationId}}
+Authorization: Bearer {{accessToken}}
+
+### Rotate the client secret. The old secret stops working at once; the new one is shown once.
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/secret
+Authorization: Bearer {{accessToken}}
+
+### Add a Resource Type, optionally with Actions. 409 if the name exists (ignoring case).
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/resource-types
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "Invoice", "actions": ["read", "approve", "export"] }
+
+### Add an Action to a Resource Type (409 if the Resource Type is Deprecated)
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/resource-types/{{resourceTypeId}}/actions
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{ "name": "void" }
+
+### Deprecate an Action. Schema entries are never removed.
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/resource-types/{{resourceTypeId}}/actions/{{actionId}}/deprecate
+Authorization: Bearer {{accessToken}}
+
+### Deprecate a Resource Type, and with it all its Actions
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/resource-types/{{resourceTypeId}}/deprecate
+Authorization: Bearer {{accessToken}}
+
+### Platform Admin actions are in the platform audit chain
+GET {{baseUrl}}/v1/platform/audit-events?eventType=application.registered
+Authorization: Bearer {{accessToken}}

@@ -222,6 +222,65 @@ model Invitation {
 }
 
 // ---------------------------------------------------------------------------
+// Applications (platform-level: no tenantId, no RLS)
+//
+// Registered by Platform Admins and the same for every Tenant. Reached only through the
+// applications module, which never sets a Tenant context.
+// ---------------------------------------------------------------------------
+
+/// An outside system that relies on Sentinel to log its users in and to make access decisions.
+model Application {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  /// Public identifier the Application sends with its secret (HTTP Basic user name).
+  clientId         String   @unique
+  /// SHA-256 of the client secret. The secret itself is shown once, when issued.
+  clientSecretHash String
+  /// When the current secret was issued; earlier secrets stop working at that moment.
+  secretIssuedAt   DateTime
+  /// Browser origins (scheme://host[:port]) the Application runs on.
+  allowedOrigins   String[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  resourceTypes ResourceType[]
+
+  @@map("applications")
+}
+
+/// A kind of thing an Application protects (Application Schema). Never removed, only Deprecated.
+model ResourceType {
+  id            String    @id @default(uuid()) @db.Uuid
+  applicationId String    @db.Uuid
+  /// The CASL subject name, such as Document.
+  name          String
+  /// Set once Deprecated: no new Permissions may use it, and its Actions count as Deprecated too.
+  deprecatedAt  DateTime?
+  createdAt     DateTime  @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  actions     Action[]
+
+  @@unique([applicationId, name])
+  @@map("resource_types")
+}
+
+/// Something a User can attempt on a Resource Type (Application Schema). Never removed, only Deprecated.
+model Action {
+  id             String    @id @default(uuid()) @db.Uuid
+  resourceTypeId String    @db.Uuid
+  /// The CASL action name, such as read or approve.
+  name           String
+  deprecatedAt   DateTime?
+  createdAt      DateTime  @default(now())
+
+  resourceType ResourceType @relation(fields: [resourceTypeId], references: [id], onDelete: Restrict)
+
+  @@unique([resourceTypeId, name])
+  @@map("actions")
+}
+
+// ---------------------------------------------------------------------------
 // Audit Log
 //
 // One table for every chain. Tenant events carry their tenantId; platform-level events (signup,

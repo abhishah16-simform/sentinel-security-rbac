@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Applications · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span>Platform</span><span class="sep">/</span><a href="/platform-applications.html">Applications</a><span class="sep">/</span><span aria-current="page" id="crumb-name">Application</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1 id="app-name">Application</h1>
+              <p class="subtitle">Credentials and Application Schema. Schema entries can be added or Deprecated, never removed.</p>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/platform-applications.html">All Applications</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="credentials-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="credentials-title">Credentials</h2>
+                  <p id="secret-issued"></p>
+                </div>
+                <button type="button" class="secondary" id="rotate"><i data-icon="key"></i>Rotate secret</button>
+              </div>
+              <div id="secret-box" class="secret-box" hidden aria-live="polite"></div>
+              <ul class="status">
+                <li><span>Client ID</span><span class="mono" id="client-id"></span></li>
+                <li><span>Allowed origins</span><span id="origins"></span></li>
+                <li><span>Registered</span><span id="registered"></span></li>
+              </ul>
+            </section>
+
+            <section class="card" aria-labelledby="schema-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="schema-title">Application Schema</h2>
+                  <p>Resource Types and the Actions on each. Tenants write Permissions against these.</p>
+                </div>
+              </div>
+              <form id="resource-type-form" class="inline-form form">
+                <div class="row">
+                  <label>
+                    Resource Type
+                    <input name="name" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9_\-]{0,63}" autocomplete="off" placeholder="Invoice" />
+                  </label>
+                  <label>
+                    Actions
+                    <input name="actions" autocomplete="off" placeholder="read approve export" />
+                    <span class="hint">Optional. Separate with spaces or commas.</span>
+                  </label>
+                </div>
+                <div class="actions"><button type="submit"><i data-icon="plus"></i>Add Resource Type</button></div>
+              </form>
+              <ul class="schema-list" id="schema"></ul>
+              <div id="schema-empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+                <strong>No Resource Types yet</strong>
+                <span>Add what this Application protects, such as Document or Invoice.</span>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/secret.js"></script>
+    <script src="/platform-application.js"></script>
+  </body>
+</html>

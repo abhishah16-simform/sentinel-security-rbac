@@ -30,6 +30,13 @@ export const AUDIT_EVENT_TYPES = {
   'membership.left': 'Left Tenant',
   'membership.admin_granted': 'Gave Tenant Admin flag',
   'membership.admin_revoked': 'Removed Tenant Admin flag',
+  'platform.admin_created': 'Created Platform Admin',
+  'application.registered': 'Registered Application',
+  'application.secret_rotated': 'Rotated client secret',
+  'application.resource_type_added': 'Added Resource Type',
+  'application.resource_type_deprecated': 'Deprecated Resource Type',
+  'application.action_added': 'Added Action',
+  'application.action_deprecated': 'Deprecated Action',
 } as const;
 
 export type AuditEventType = keyof typeof AUDIT_EVENT_TYPES;

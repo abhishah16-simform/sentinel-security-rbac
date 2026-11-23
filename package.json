@@ -20,7 +20,8 @@
     "postinstall": "prisma generate",
     "prisma:deploy": "prisma migrate deploy",
     "mail:up": "docker-compose up -d mailpit",
-    "keys:generate": "node scripts/generate-jwt-key.mjs"
+    "keys:generate": "node scripts/generate-jwt-key.mjs",
+    "platform-admin:create": "node dist/platform/create-platform-admin"
   },
   "dependencies": {
     "@nestjs/common": "11.2.11",

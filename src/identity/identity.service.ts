@@ -133,6 +133,30 @@ export class IdentityService {
     }
   }
 
+  /**
+   * Creates a Platform Admin: a verified User with the Platform Admin flag and no Memberships. Used
+   * by the seed command only. An email that already has an account is refused, so an existing User
+   * (who may have Memberships) is never turned into one.
+   */
+  async createPlatformAdmin(input: SignupInput): Promise<UserProfile> {
+    const { firstName, lastName, password } = input;
+    const email = normalizeEmail(input.email);
+    const passwordHash = await this.passwords.hash(password);
+    try {
+      const user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: { email, firstName, lastName, passwordHash, emailVerifiedAt: new Date(), isPlatformAdmin: true },
+        });
+        await this.audit.recordIn(tx, userEvent(null, created.id, 'platform.admin_created', { email, via: 'seed' }));
+        return created;
+      });
+      return toProfile(user);
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      throw new ConflictException('A User with this email already exists.');
+    }
+  }
+
   /** Marks the User verified if the token is valid, unused and unexpired. Each token works once. */
   async verifyEmail(token: string): Promise<void> {
     const now = new Date();

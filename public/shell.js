@@ -4,7 +4,9 @@
 (function () {
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) return;
-  const current = window.location.pathname === '/' ? '/index.html' : window.location.pathname;
+  const path = window.location.pathname === '/' ? '/index.html' : window.location.pathname;
+  // Detail pages highlight the list they belong to.
+  const current = path === '/platform-application.html' ? '/platform-applications.html' : path;
 
   function navItem(href, icon, label) {
     const here = href === current ? ' aria-current="page"' : '';
@@ -35,6 +37,11 @@
     soonItem('key', 'Roles') +
     soonItem('lock', 'Permissions') +
     soonItem('grid', 'Applications') +
+    '</nav>' +
+    '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +
+    '<div class="nav-label">Platform</div>' +
+    navItem('/platform-applications.html', 'server', 'Applications') +
+    soonItem('building', 'All Tenants') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Compliance">' +
     '<div class="nav-label">Compliance</div>' +
@@ -121,6 +128,7 @@
     initials: initials,
     fullName: fullName,
     setUser(me) {
+      document.getElementById('platform-nav').hidden = !me.isPlatformAdmin;
       const name = fullName(me);
       document.getElementById('user-avatar').textContent = initials(name || me.email);
       document.getElementById('user-name').textContent = name || me.email;

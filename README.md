@@ -117,6 +117,14 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - `invitations` is Tenant-owned. Besides `tenant_isolation`, an `own_invitations` policy lets a User with a verified email read Invitations to that email under `ScopedPrisma.asUser()`; the inbox is refused (`403`) until the email is verified. Answering one switches the same transaction to the Invitation's Tenant context (`setTenantContext`) to write, as does signing up from a link, whose transaction also creates the User.
 - Every change is recorded in the Tenant's audit chain (`invitation.*`, `membership.*`). [`http/invitations.http`](http/invitations.http) walks through it.
 
+## Platform Admin and Applications
+
+- A Platform Admin is a User with the Platform Admin flag and no Memberships. Create one after `npm run build` with `npm run platform-admin:create -- --email <email> --first-name <name> --last-name <name>`. The password comes from `PLATFORM_ADMIN_PASSWORD`, a hidden terminal prompt, or standard input. An email that already has an account is refused, so an existing User is never promoted.
+- Platform Admin endpoints live under `/v1/platform/` and use plain `PrismaService`, never a Tenant context, so RLS keeps Tenant data out of reach. `applications`, `resource_types` and `actions` are platform-level tables (no `tenantId`, no RLS).
+- `POST /v1/platform/applications` registers an Application with a name and allowed origins (scheme, host and port only) and returns a client ID (`app_…`) and a client secret. The secret is shown once: only its SHA-256 is stored. `POST /v1/platform/applications/:id/secret` issues a new one, and the old one stops working at once.
+- The Application Schema: `POST …/:id/resource-types` (with optional `actions`), `POST …/resource-types/:rtId/actions`, and `POST …/deprecate` on either. Entries are never removed. A Deprecated Resource Type makes its Actions count as Deprecated and takes no new Actions. Names are identifiers (a letter, then letters, digits, `_` or `-`), unique ignoring case; CASL's `manage` and `all` are reserved.
+- Every Platform Admin action is recorded in the platform audit chain with the Application's ID. The console pages are `/platform-applications.html` and `/platform-application.html?id=…`, shown in a Platform section of the sidebar for Platform Admins only. [`http/platform-applications.http`](http/platform-applications.http) walks through it.
+
 ## Audit Log
 
 - Every authentication event and admin change goes through one writer (`AuditLog`), in the same transaction as the change it records. See `src/audit/audit-event-types.ts` for the event types.
