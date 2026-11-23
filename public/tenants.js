@@ -26,6 +26,27 @@
     li.append(info);
 
     const end = document.createElement('span');
+    end.className = 'actions';
+    const leave = document.createElement('button');
+    leave.type = 'button';
+    leave.className = 'ghost small';
+    leave.textContent = 'Leave';
+    leave.setAttribute('aria-label', 'Leave ' + tenant.tenantName);
+    leave.addEventListener('click', async function () {
+      if (!window.confirm('Leave ' + tenant.tenantName + '? You lose access until a Tenant Admin invites you again.')) return;
+      leave.disabled = true;
+      leave.setAttribute('aria-busy', 'true');
+      try {
+        await Sentinel.api('/v1/tenants/' + tenant.tenantId + '/membership', { method: 'DELETE' });
+        // Reload so a new session without the Tenant is picked up if it was the Active Tenant.
+        window.location.reload();
+      } catch (error) {
+        leave.disabled = false;
+        leave.removeAttribute('aria-busy');
+        showMessage(message, error.message, 'error');
+      }
+    });
+    end.append(leave);
     if (tenant.tenantId === activeTenantId) {
       const current = document.createElement('span');
       current.textContent = 'Active';

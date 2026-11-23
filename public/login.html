@@ -45,14 +45,18 @@
         const mfaForm = document.getElementById('mfa-form');
         let mfaToken = null;
 
+        // Pages a link may ask to land on after login (?next=...). A fixed list, so it can't redirect elsewhere.
+        const NEXT_PAGES = { invitations: '/invitations.html' };
+        const next = NEXT_PAGES[new URLSearchParams(window.location.search).get('next')] || null;
+
         // One Tenant: go straight into it. Several: let the User pick. None: home offers to create one.
         async function enter() {
           const tenants = (await Sentinel.api('/v1/tenants')).items;
           if (tenants.length === 1) {
             await Sentinel.switchTenant(tenants[0].tenantId);
-            window.location.href = '/';
+            window.location.href = next || '/';
           } else {
-            window.location.href = tenants.length > 1 ? '/tenants.html' : '/';
+            window.location.href = next || (tenants.length > 1 ? '/tenants.html' : '/');
           }
         }
 

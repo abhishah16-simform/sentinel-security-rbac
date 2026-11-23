@@ -106,6 +106,16 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - RLS doesn't apply while the app connects as `postgres` (a superuser). See [Database user](#database-user).
 - [`http/tenants.http`](http/tenants.http) walks through it.
 
+## Invitations and Memberships
+
+- Tenant Admins manage the Active Tenant under `/v1/tenants/current/`: `invitations` (list pending, `POST` to invite an email, `POST :id/resend`, `DELETE :id` to cancel) and `memberships` (list, `PATCH :id` with `{ "isTenantAdmin": bool }`, `DELETE :id`). The console page is `/members.html`.
+- An Invitation lasts 7 days. Its emailed link is `/invitation.html#token=<tenantId>.<secret>`; only the secret's SHA-256 is stored, and resending replaces it. An email has at most one pending Invitation per Tenant (a partial unique index).
+- The invited User answers from the inbox (`GET /v1/me/invitations`, `POST :id/accept` or `:id/decline`, page `/invitations.html`). Only accepting creates a Membership, and it needs a verified email. Someone without an account signs up from the link (`POST /v1/invitations/preview`, `POST /v1/invitations/signup`); the account starts verified, since the link reached the address, and joins the Tenant in the same transaction.
+- `DELETE /v1/tenants/:tenantId/membership` leaves a Tenant.
+- A change that would leave a Tenant with no Tenant Admin (removing the flag, removing or leaving) gets `409`. Each such change locks the Tenant row first, so concurrent changes can't both pass the check.
+- `invitations` is Tenant-owned. Besides `tenant_isolation`, an `own_invitations` policy lets a User read Invitations to their own email under `ScopedPrisma.asUser()`. Answering one switches to the Invitation's Tenant context to write.
+- Every change is recorded in the Tenant's audit chain (`invitation.*`, `membership.*`). [`http/invitations.http`](http/invitations.http) walks through it.
+
 ## Audit Log
 
 - Every authentication event and admin change goes through one writer (`AuditLog`), in the same transaction as the change it records. See `src/audit/audit-event-types.ts` for the event types.

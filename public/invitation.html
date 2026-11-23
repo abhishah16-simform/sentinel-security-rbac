@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Invitation · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="auth-shell">
+      <aside class="auth-aside" id="auth-aside" aria-hidden="true"></aside>
+      <main class="auth-main">
+        <div class="auth-card">
+          <a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>SENTINEL</a>
+          <div class="status-icon"><i data-icon="mail"></i></div>
+          <h1 id="title">Your Invitation</h1>
+          <p class="subtitle" id="subtitle">Checking your link…</p>
+
+          <form id="signup-form" class="form" hidden>
+            <label>Email <input id="email" type="email" readonly /></label>
+            <div class="row">
+              <label>First name <input name="firstName" type="text" autocomplete="given-name" required maxlength="100" placeholder="Ada" /></label>
+              <label>Last name <input name="lastName" type="text" autocomplete="family-name" required maxlength="100" placeholder="Lovelace" /></label>
+            </div>
+            <label>
+              Password
+              <input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128" placeholder="At least 12 characters" />
+              <span class="hint">Use 12 or more characters. A passphrase works well.</span>
+            </label>
+            <button type="submit">Create account and join</button>
+          </form>
+
+          <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+          <p class="links" id="login-link" hidden>
+            <a class="button" href="/login.html?next=invitations">Log in to accept</a>
+          </p>
+          <p class="links" id="account-hint">Already have an account? <a href="/login.html?next=invitations">Log in</a> and open Invitations.</p>
+        </div>
+        <p class="auth-legal">Protected by SENTINEL · Tenant data is isolated with row-level security</p>
+      </main>
+    </div>
+    <script src="/icons.js"></script>
+    <script src="/auth.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script>
+      (function () {
+        const message = document.getElementById('message');
+        const form = document.getElementById('signup-form');
+        const subtitle = document.getElementById('subtitle');
+        const token = new URLSearchParams(window.location.hash.slice(1)).get('token');
+        // Drop the token from the address bar and history once it has been read.
+        history.replaceState(null, '', window.location.pathname);
+
+        if (!token) {
+          subtitle.textContent = 'This page needs the link from your Invitation email.';
+          return;
+        }
+
+        handleForm(form, message, async function (data) {
+          const joined = await Sentinel.postJson('/v1/invitations/signup', {
+            token: token,
+            firstName: data.get('firstName'),
+            lastName: data.get('lastName'),
+            password: data.get('password'),
+          });
+          form.hidden = true;
+          document.getElementById('account-hint').hidden = true;
+          subtitle.textContent = 'Your account is ready and you are a member of ' + joined.tenantName + '.';
+          showMessage(message, 'Log in to start working in ' + joined.tenantName + '.', 'success');
+          document.getElementById('login-link').hidden = false;
+          const login = document.querySelector('#login-link a');
+          login.textContent = 'Log in';
+          login.href = '/login.html';
+        });
+
+        Sentinel.postJson('/v1/invitations/preview', { token: token })
+          .then(function (invitation) {
+            const from = invitation.invitedByName ? invitation.invitedByName + ' invited' : 'You are invited';
+            document.getElementById('title').textContent = 'Join ' + invitation.tenantName;
+            if (invitation.hasAccount) {
+              subtitle.textContent =
+                from + ' ' + invitation.email + ' to join ' + invitation.tenantName + '. That email already has an account.';
+              document.getElementById('login-link').hidden = false;
+              document.getElementById('account-hint').hidden = true;
+              return;
+            }
+            subtitle.textContent = from + ' you to join ' + invitation.tenantName + '. Create your account to accept.';
+            document.getElementById('email').value = invitation.email;
+            form.hidden = false;
+          })
+          .catch(function (error) {
+            subtitle.textContent = 'This link can no longer be used.';
+            showMessage(message, error.message, 'error');
+          });
+      })();
+    </script>
+  </body>
+</html>

@@ -27,7 +27,8 @@
     '<nav class="nav-section" aria-label="Main">' +
     navItem('/index.html', 'home', 'Overview') +
     navItem('/tenants.html', 'building', 'Tenants') +
-    soonItem('users', 'Members') +
+    navItem('/invitations.html', 'mail', 'Invitations') +
+    navItem('/members.html', 'users', 'Members') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Access control">' +
     '<div class="nav-label">Access control</div>' +

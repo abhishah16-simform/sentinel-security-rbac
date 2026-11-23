@@ -1,0 +1,89 @@
+# Invitations and Memberships (ticket 06). Log in first with http/auth.http and make a Tenant
+# your Active Tenant with http/tenants.http; the Tenant Admin endpoints need a Tenant Admin token.
+# Emails land in Mailpit (npm run mail:up, http://localhost:8025).
+
+@baseUrl = http://localhost:9800
+@adminToken = paste-tenant-admin-access-token
+@userToken = paste-invited-user-access-token
+@tenantId = paste-tenant-id
+@membershipId = paste-membership-id
+@invitationId = paste-invitation-id
+# From the Invitation email link: /invitation.html#token=<this>
+@linkToken = paste-tenant-id.secret
+
+### -------------------------------------------------------------- Tenant Admin: Invitations
+
+### Invite an email address. 409 if it is already a member or already has a pending Invitation.
+POST {{baseUrl}}/v1/tenants/current/invitations
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "email": "new.person@example.com" }
+
+### Pending Invitations (expired ones show expired: true until resent or cancelled)
+GET {{baseUrl}}/v1/tenants/current/invitations
+Authorization: Bearer {{adminToken}}
+
+### Resend with a new link and a fresh 7-day expiry. The old link stops working. 429 within a minute of the last send.
+POST {{baseUrl}}/v1/tenants/current/invitations/{{invitationId}}/resend
+Authorization: Bearer {{adminToken}}
+
+### Cancel a pending Invitation (204)
+DELETE {{baseUrl}}/v1/tenants/current/invitations/{{invitationId}}
+Authorization: Bearer {{adminToken}}
+
+### -------------------------------------------------------------- Tenant Admin: Memberships
+
+### Every Membership in the Active Tenant
+GET {{baseUrl}}/v1/tenants/current/memberships
+Authorization: Bearer {{adminToken}}
+
+### Give the Tenant Admin flag
+PATCH {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "isTenantAdmin": true }
+
+### Remove the Tenant Admin flag. 409 if it is the Tenant's last Tenant Admin.
+PATCH {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "isTenantAdmin": false }
+
+### Remove a Membership (204). 409 for the last Tenant Admin.
+DELETE {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}
+Authorization: Bearer {{adminToken}}
+
+### -------------------------------------------------------------- The invited User
+
+### Invitations inbox: pending, unexpired Invitations to your email
+GET {{baseUrl}}/v1/me/invitations
+Authorization: Bearer {{userToken}}
+
+### Accept: creates your Membership (verified email needed). Then switch to the Tenant with tenants.http.
+POST {{baseUrl}}/v1/me/invitations/{{invitationId}}/accept
+Authorization: Bearer {{userToken}}
+
+### Decline (204)
+POST {{baseUrl}}/v1/me/invitations/{{invitationId}}/decline
+Authorization: Bearer {{userToken}}
+
+### Leave a Tenant yourself (204). 409 if you are its last Tenant Admin.
+DELETE {{baseUrl}}/v1/tenants/{{tenantId}}/membership
+Authorization: Bearer {{userToken}}
+
+### -------------------------------------------------------------- The Invitation link (no account)
+
+### Who the Invitation is from and for; hasAccount tells the page to offer login instead of signup
+POST {{baseUrl}}/v1/invitations/preview
+Content-Type: application/json
+
+{ "token": "{{linkToken}}" }
+
+### Sign up from the Invitation: the account starts verified and joins the Tenant. Then log in.
+POST {{baseUrl}}/v1/invitations/signup
+Content-Type: application/json
+
+{ "token": "{{linkToken}}", "firstName": "New", "lastName": "Person", "password": "correct horse battery staple" }

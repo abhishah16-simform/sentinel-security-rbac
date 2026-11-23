@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { User } from '@prisma/client';
-import { AuditLog } from '../audit/audit-log.service';
+import { AuditLog, userEvent } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
 import { isUniqueConstraintError } from '../common/prisma-errors';
 import type { Env } from '../config/env';
@@ -103,6 +103,34 @@ export class IdentityService {
       return;
     }
     await this.sendVerificationEmail(user);
+  }
+
+  /**
+   * Creates a User from an Invitation link, then runs `join` in the same transaction to accept it.
+   * The link was emailed to the address, so the User starts verified. Unlike signup, a taken email
+   * is refused openly: only the address's owner holds the link.
+   */
+  async signupFromInvitation<T>(
+    input: SignupInput,
+    join: (tx: ScopedTransaction, user: UserProfile) => Promise<T>,
+  ): Promise<T> {
+    const { firstName, lastName, password } = input;
+    const email = normalizeEmail(input.email);
+    const passwordHash = await this.passwords.hash(password);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const created = await tx.user.create({
+          data: { email, firstName, lastName, passwordHash, emailVerifiedAt: now },
+        });
+        await this.audit.recordIn(tx, userEvent(created.id, created.id, 'user.signed_up', { email, via: 'invitation' }));
+        await this.audit.recordIn(tx, userEvent(created.id, created.id, 'user.email_verified', { via: 'invitation' }));
+        return join(tx, toProfile(created));
+      });
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      throw new ConflictException('An account with this email already exists. Log in to accept the Invitation.');
+    }
   }
 
   /** Marks the User verified if the token is valid, unused and unexpired. Each token works once. */

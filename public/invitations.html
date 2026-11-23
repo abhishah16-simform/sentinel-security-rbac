@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Invitations · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Invitations</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Invitations</h1>
+              <p class="subtitle">Tenants that invited you. Nobody adds you to a Tenant until you accept.</p>
+            </div>
+          </div>
+
+          <section class="card" aria-labelledby="list-title" aria-live="polite">
+            <div class="card-header">
+              <div>
+                <h2 id="list-title">Pending Invitations</h2>
+                <p>Sent to your email address. Accepting makes you a member of that Tenant.</p>
+              </div>
+              <span class="badge accent" id="invitation-count" hidden></span>
+            </div>
+            <div id="loading" class="skeleton-wrap">
+              <div class="skeleton"></div>
+              <div class="skeleton" style="width: 70%"></div>
+            </div>
+            <div id="empty" class="empty" hidden>
+              <span class="icon-tile"><i data-icon="mail"></i></span>
+              <strong>No pending Invitations</strong>
+              <span>When a Tenant Admin invites your email address, it shows up here.</span>
+            </div>
+            <div class="card-body">
+              <ul id="invitation-list" class="status tenant-list"></ul>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/invitations.js"></script>
+  </body>
+</html>

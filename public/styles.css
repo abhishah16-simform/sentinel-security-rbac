@@ -1298,6 +1298,11 @@ button[aria-busy='true']::before {
   gap: 8px;
 }
 
+.data-table .num .actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
 /* ------------------------------------------------------------------ messages */
 
 .message {

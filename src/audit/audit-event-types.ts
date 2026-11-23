@@ -21,6 +21,15 @@ export const AUDIT_EVENT_TYPES = {
   'auth.logged_out_everywhere': 'Logged out everywhere',
   'tenant.created': 'Created Tenant',
   'tenant.switched': 'Switched Active Tenant',
+  'invitation.sent': 'Sent Invitation',
+  'invitation.resent': 'Resent Invitation',
+  'invitation.cancelled': 'Cancelled Invitation',
+  'invitation.accepted': 'Accepted Invitation',
+  'invitation.declined': 'Declined Invitation',
+  'membership.removed': 'Removed Membership',
+  'membership.left': 'Left Tenant',
+  'membership.admin_granted': 'Gave Tenant Admin flag',
+  'membership.admin_revoked': 'Removed Tenant Admin flag',
 } as const;
 
 export type AuditEventType = keyof typeof AUDIT_EVENT_TYPES;
