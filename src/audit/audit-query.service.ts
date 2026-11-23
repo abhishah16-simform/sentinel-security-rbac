@@ -1,13 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuditEvent, Prisma } from '@prisma/client';
 import { IdentityService, type UserProfile } from '../identity/identity.service';
+import { decodeCursor, encodeCursor, pageSize } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import { AUDIT_EVENT_TYPES, isAuditEventType } from './audit-event-types';
 import type { ListAuditEventsQuery } from './dto/list-audit-events.dto';
 
-const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 200;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface AuditUserRef {
@@ -39,31 +38,6 @@ export interface AuditEventPage {
 export interface AuditEventTypeView {
   readonly type: string;
   readonly label: string;
-}
-
-interface PageCursor {
-  readonly createdAt: Date;
-  readonly id: string;
-}
-
-function encodeCursor(event: AuditEvent): string {
-  return Buffer.from(`${event.createdAt.toISOString()}|${event.id}`).toString('base64url');
-}
-
-function decodeCursor(cursor: string): PageCursor {
-  const [time, id] = Buffer.from(cursor, 'base64url').toString().split('|');
-  const createdAt = new Date(time ?? '');
-  if (!id || !UUID_PATTERN.test(id) || Number.isNaN(createdAt.getTime())) {
-    throw new BadRequestException('cursor is not valid');
-  }
-  return { createdAt, id };
-}
-
-function pageSize(limit: string | undefined): number {
-  if (limit === undefined) return DEFAULT_PAGE_SIZE;
-  const size = Number(limit);
-  if (size < 1 || size > MAX_PAGE_SIZE) throw new BadRequestException(`limit must be between 1 and ${MAX_PAGE_SIZE}`);
-  return size;
 }
 
 function parseInstant(value: string | undefined): Date | undefined {

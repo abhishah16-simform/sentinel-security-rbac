@@ -11,6 +11,7 @@ import type { Invitation, Prisma } from '@prisma/client';
 import type { AuditEventType } from '../audit/audit-event-types';
 import { AuditLog } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
+import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { isUniqueConstraintError } from '../common/prisma-errors';
 import type { Env } from '../config/env';
 import { normalizeEmail } from '../identity/email';
@@ -18,15 +19,22 @@ import { IdentityService, type SignupInput, type UserProfile } from '../identity
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma, type ScopedTransaction, setTenantContext } from '../prisma/scoped-prisma';
-import type { ActiveTenantRef, TenantMembership } from './tenancy.service';
+import { type TenantMembership, toTenantMembership } from './tenancy.service';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** An Invitation's email can be resent once this long after it was last sent. */
 const RESEND_INTERVAL_MS = 60 * 1000;
 
 const INVALID_LINK_MESSAGE = 'This Invitation link is invalid, already used, cancelled or expired.';
+const NOT_PENDING_MESSAGE = 'This Invitation is no longer pending, or has expired.';
 
-type InvitationWithNames = Prisma.InvitationGetPayload<{ include: { tenant: true; invitedBy: true } }>;
+/** Loads the Tenant (no RLS) and the inviting User with an Invitation, for names. */
+const WITH_NAMES = { tenant: true, invitedBy: true } as const satisfies Prisma.InvitationInclude;
+type InvitationWithNames = Prisma.InvitationGetPayload<{ include: typeof WITH_NAMES }>;
+
+function expiryFrom(now: Date): Date {
+  return new Date(now.getTime() + INVITATION_TTL_MS);
+}
 
 /** A pending Invitation, as the Tenant Admin's Invitations list shows it. */
 export interface TenantInvitation {
@@ -118,20 +126,22 @@ export class InvitationsService {
   // -------------------------------------------------------------------------------------------
 
   /** The Active Tenant's pending Invitations, newest first. */
-  async listForTenant(tenantId: string): Promise<TenantInvitation[]> {
+  async listForTenant(tenantId: string, query: PageQuery): Promise<Page<TenantInvitation>> {
     const now = new Date();
-    const invitations = await this.scoped.inTenant(tenantId, (tx) =>
+    const window = pageWindow(query, 'desc');
+    const rows = await this.scoped.inTenant(tenantId, (tx) =>
       tx.invitation.findMany({
-        where: { tenantId, status: 'PENDING' },
-        include: { tenant: true, invitedBy: true },
-        orderBy: { createdAt: 'desc' },
+        where: { tenantId, status: 'PENDING', ...window.after },
+        include: WITH_NAMES,
+        orderBy: window.orderBy,
+        take: window.take,
       }),
     );
-    return invitations.map((invitation) => toTenantInvitation(invitation, now));
+    return toPage(rows, window, (invitation) => toTenantInvitation(invitation, now));
   }
 
   /** Invites an email address to the Active Tenant and emails it a link. */
-  async invite(active: ActiveTenantRef, actorUserId: string, rawEmail: string): Promise<TenantInvitation> {
+  async invite(tenantId: string, actorUserId: string, rawEmail: string): Promise<TenantInvitation> {
     const email = normalizeEmail(rawEmail);
     const invitee = await this.identity.findProfileByEmail(email);
     const secret = generateOpaqueToken();
@@ -139,23 +149,23 @@ export class InvitationsService {
 
     let invitation: InvitationWithNames;
     try {
-      invitation = await this.scoped.inTenant(active.tenantId, async (tx) => {
+      invitation = await this.scoped.inTenant(tenantId, async (tx) => {
         if (invitee) {
           const existing = await tx.membership.findUnique({
-            where: { tenantId_userId: { tenantId: active.tenantId, userId: invitee.id } },
+            where: { tenantId_userId: { tenantId, userId: invitee.id } },
           });
           if (existing) throw new ConflictException('That person is already a member of this Tenant.');
         }
         const created = await tx.invitation.create({
           data: {
-            tenantId: active.tenantId,
+            tenantId,
             email,
             invitedByUserId: actorUserId,
             tokenHash: hashOpaqueToken(secret),
-            expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
+            expiresAt: expiryFrom(now),
             sentAt: now,
           },
-          include: { tenant: true, invitedBy: true },
+          include: WITH_NAMES,
         });
         await this.recordIn(tx, created, 'invitation.sent', actorUserId);
         return created;
@@ -169,18 +179,18 @@ export class InvitationsService {
   }
 
   /** Emails a pending Invitation again with a new link, and renews its expiry. The old link stops working. */
-  async resend(active: ActiveTenantRef, actorUserId: string, invitationId: string): Promise<TenantInvitation> {
+  async resend(tenantId: string, actorUserId: string, invitationId: string): Promise<TenantInvitation> {
     const secret = generateOpaqueToken();
     const now = new Date();
-    const invitation = await this.scoped.inTenant(active.tenantId, async (tx) => {
-      const current = await this.findPendingIn(tx, active.tenantId, invitationId);
+    const invitation = await this.scoped.inTenant(tenantId, async (tx) => {
+      const current = await this.findPendingIn(tx, tenantId, invitationId);
       if (now.getTime() - current.sentAt.getTime() < RESEND_INTERVAL_MS) {
         throw new HttpException('Wait a minute before resending this Invitation.', HttpStatus.TOO_MANY_REQUESTS);
       }
       const updated = await tx.invitation.update({
         where: { id: current.id },
-        data: { tokenHash: hashOpaqueToken(secret), expiresAt: new Date(now.getTime() + INVITATION_TTL_MS), sentAt: now },
-        include: { tenant: true, invitedBy: true },
+        data: { tokenHash: hashOpaqueToken(secret), expiresAt: expiryFrom(now), sentAt: now },
+        include: WITH_NAMES,
       });
       await this.recordIn(tx, updated, 'invitation.resent', actorUserId);
       return updated;
@@ -189,9 +199,9 @@ export class InvitationsService {
     return toTenantInvitation(invitation, now);
   }
 
-  async cancel(active: ActiveTenantRef, actorUserId: string, invitationId: string): Promise<void> {
-    await this.scoped.inTenant(active.tenantId, async (tx) => {
-      const invitation = await this.findPendingIn(tx, active.tenantId, invitationId);
+  async cancel(tenantId: string, actorUserId: string, invitationId: string): Promise<void> {
+    await this.scoped.inTenant(tenantId, async (tx) => {
+      const invitation = await this.findPendingIn(tx, tenantId, invitationId);
       await this.closeIn(tx, invitation, 'CANCELLED');
       await this.recordIn(tx, invitation, 'invitation.cancelled', actorUserId);
     });
@@ -201,18 +211,24 @@ export class InvitationsService {
   // The invited User
   // -------------------------------------------------------------------------------------------
 
-  /** Pending, unexpired Invitations to the User's email, across Tenants: the Invitations inbox. */
-  async listForUser(userId: string): Promise<ReceivedInvitation[]> {
+  /**
+   * Pending, unexpired Invitations to the User's email, across Tenants, newest first: the Invitations
+   * inbox. Only for a verified email, so an account squatting on someone's address learns nothing.
+   */
+  async listForUser(userId: string, query: PageQuery): Promise<Page<ReceivedInvitation>> {
     const user = await this.identity.getProfile(userId);
+    if (!user.emailVerified) throw new ForbiddenException('Verify your email address to see Invitations sent to it.');
     const now = new Date();
-    const invitations = await this.scoped.asUser(userId, (tx) =>
+    const window = pageWindow(query, 'desc');
+    const rows = await this.scoped.asUser(userId, (tx) =>
       tx.invitation.findMany({
-        where: { email: user.email, status: 'PENDING', expiresAt: { gt: now } },
-        include: { tenant: true, invitedBy: true },
-        orderBy: { createdAt: 'desc' },
+        where: { email: user.email, status: 'PENDING', expiresAt: { gt: now }, ...window.after },
+        include: WITH_NAMES,
+        orderBy: window.orderBy,
+        take: window.take,
       }),
     );
-    return invitations.map((invitation) => ({
+    return toPage(rows, window, (invitation) => ({
       id: invitation.id,
       tenantId: invitation.tenantId,
       tenantName: invitation.tenant.name,
@@ -239,6 +255,7 @@ export class InvitationsService {
 
   async decline(userId: string, invitationId: string): Promise<void> {
     const user = await this.identity.getProfile(userId);
+    if (!user.emailVerified) throw new ForbiddenException('Verify your email address before answering an Invitation.');
     await this.scoped.asUser(userId, async (tx) => {
       const invitation = await this.findOwnOpenIn(tx, user, invitationId);
       await setTenantContext(tx, invitation.tenantId);
@@ -284,7 +301,7 @@ export class InvitationsService {
   private async findOwnOpenIn(tx: ScopedTransaction, user: UserProfile, invitationId: string): Promise<Invitation> {
     const invitation = await tx.invitation.findFirst({ where: { id: invitationId, email: user.email } });
     if (!invitation || !isOpen(invitation, new Date())) {
-      throw new NotFoundException('This Invitation is no longer pending, or has expired.');
+      throw new NotFoundException(NOT_PENDING_MESSAGE);
     }
     return invitation;
   }
@@ -292,7 +309,7 @@ export class InvitationsService {
   private async findByLink(token: string): Promise<InvitationWithNames> {
     const link = parseLinkToken(token);
     const invitation = await this.scoped.inTenant(link.tenantId, (tx) =>
-      tx.invitation.findUnique({ where: { tokenHash: link.tokenHash }, include: { tenant: true, invitedBy: true } }),
+      tx.invitation.findUnique({ where: { tokenHash: link.tokenHash }, include: WITH_NAMES }),
     );
     if (!invitation || !isOpen(invitation, new Date())) throw new NotFoundException(INVALID_LINK_MESSAGE);
     return invitation;
@@ -310,7 +327,7 @@ export class InvitationsService {
       where: { id: invitation.id, status: 'PENDING', expiresAt: { gt: new Date() } },
       data: { status: 'ACCEPTED', closedAt: new Date() },
     });
-    if (claimed.count === 0) throw new NotFoundException('This Invitation is no longer pending, or has expired.');
+    if (claimed.count === 0) throw new NotFoundException(NOT_PENDING_MESSAGE);
 
     const membership = await tx.membership.create({
       data: { tenantId: invitation.tenantId, userId: user.id },
@@ -324,12 +341,7 @@ export class InvitationsService {
       target: { type: 'invitation', id: invitation.id },
       payload: { membershipId: membership.id },
     });
-    return {
-      tenantId: membership.tenantId,
-      tenantName: membership.tenant.name,
-      membershipId: membership.id,
-      isTenantAdmin: membership.isTenantAdmin,
-    };
+    return toTenantMembership(membership);
   }
 
   /** Accepting when the User already belongs to the Tenant breaks the Membership unique key. */

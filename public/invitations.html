@@ -42,11 +42,15 @@
             </div>
             <div id="empty" class="empty" hidden>
               <span class="icon-tile"><i data-icon="mail"></i></span>
-              <strong>No pending Invitations</strong>
-              <span>When a Tenant Admin invites your email address, it shows up here.</span>
+              <strong id="empty-title">No pending Invitations</strong>
+              <span id="empty-text">When a Tenant Admin invites your email address, it shows up here.</span>
             </div>
             <div class="card-body">
               <ul id="invitation-list" class="status tenant-list"></ul>
+            </div>
+            <div class="card-footer" id="more-footer" hidden>
+              <span class="hint">More Invitations to show</span>
+              <button type="button" class="secondary small" id="more">Load more</button>
             </div>
           </section>
         </main>

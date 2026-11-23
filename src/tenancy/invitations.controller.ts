@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { AccessTokenGuard, CurrentClaims } from '../access-token/access-token.guard';
 import type { AccessTokenClaims } from '../access-token/access-token.service';
 import { TenantAdminGuard } from '../access-token/admin.guards';
+import { type Page, PageQuery } from '../common/pagination';
 import { ActiveTenant } from './active-tenant.guard';
-import { InviteDto } from './dto/invite.dto';
 import { InvitationSignupDto, InvitationTokenDto } from './dto/invitation-link.dto';
+import { InviteDto } from './dto/invite.dto';
 import {
   type InvitationPreview,
   InvitationsService,
@@ -13,19 +14,16 @@ import {
 } from './invitations.service';
 import type { ActiveTenantRef, TenantMembership } from './tenancy.service';
 
-interface ItemList<T> {
-  readonly items: readonly T[];
-}
-
 /** The Active Tenant's pending Invitations, for its Tenant Admins. */
 @Controller('tenants/current/invitations')
 @UseGuards(AccessTokenGuard, TenantAdminGuard)
 export class TenantInvitationsController {
   constructor(private readonly invitations: InvitationsService) {}
 
+  /** Newest first, paginated. */
   @Get()
-  async list(@ActiveTenant() active: ActiveTenantRef): Promise<ItemList<TenantInvitation>> {
-    return { items: await this.invitations.listForTenant(active.tenantId) };
+  list(@ActiveTenant() active: ActiveTenantRef, @Query() query: PageQuery): Promise<Page<TenantInvitation>> {
+    return this.invitations.listForTenant(active.tenantId, query);
   }
 
   @Post()
@@ -34,7 +32,7 @@ export class TenantInvitationsController {
     @CurrentClaims() claims: AccessTokenClaims,
     @Body() body: InviteDto,
   ): Promise<TenantInvitation> {
-    return this.invitations.invite(active, claims.sub, body.email);
+    return this.invitations.invite(active.tenantId, claims.sub, body.email);
   }
 
   /** Email the Invitation again with a new link. The old link stops working. */
@@ -45,7 +43,7 @@ export class TenantInvitationsController {
     @CurrentClaims() claims: AccessTokenClaims,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ): Promise<TenantInvitation> {
-    return this.invitations.resend(active, claims.sub, invitationId);
+    return this.invitations.resend(active.tenantId, claims.sub, invitationId);
   }
 
   @Delete(':invitationId')
@@ -55,7 +53,7 @@ export class TenantInvitationsController {
     @CurrentClaims() claims: AccessTokenClaims,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
   ): Promise<void> {
-    return this.invitations.cancel(active, claims.sub, invitationId);
+    return this.invitations.cancel(active.tenantId, claims.sub, invitationId);
   }
 }
 
@@ -65,9 +63,10 @@ export class TenantInvitationsController {
 export class MyInvitationsController {
   constructor(private readonly invitations: InvitationsService) {}
 
+  /** Newest first, paginated. Needs a verified email. */
   @Get()
-  async list(@CurrentClaims() claims: AccessTokenClaims): Promise<ItemList<ReceivedInvitation>> {
-    return { items: await this.invitations.listForUser(claims.sub) };
+  list(@CurrentClaims() claims: AccessTokenClaims, @Query() query: PageQuery): Promise<Page<ReceivedInvitation>> {
+    return this.invitations.listForUser(claims.sub, query);
   }
 
   /** Accept: creates the Membership. Needs a verified email. */

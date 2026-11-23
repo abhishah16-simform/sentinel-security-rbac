@@ -21,7 +21,7 @@ export interface ActiveTenantRef {
 
 type MembershipWithTenant = Prisma.MembershipGetPayload<{ include: { tenant: true } }>;
 
-function toTenantMembership(membership: MembershipWithTenant): TenantMembership {
+export function toTenantMembership(membership: MembershipWithTenant): TenantMembership {
   return {
     tenantId: membership.tenantId,
     tenantName: membership.tenant.name,

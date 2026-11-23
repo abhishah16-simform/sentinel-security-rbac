@@ -78,10 +78,33 @@
     return li;
   }
 
+  let nextCursor = null;
+
+  function showPage(page) {
+    list.append.apply(list, page.items.map(invitationRow));
+    nextCursor = page.nextCursor;
+    document.getElementById('more-footer').hidden = !nextCursor;
+    updateCount();
+  }
+
+  const more = document.getElementById('more');
+  more.addEventListener('click', async function () {
+    more.disabled = true;
+    more.setAttribute('aria-busy', 'true');
+    try {
+      showPage(await Sentinel.api('/v1/me/invitations?cursor=' + encodeURIComponent(nextCursor)));
+    } catch (error) {
+      showMessage(message, error.message, 'error');
+    } finally {
+      more.disabled = false;
+      more.removeAttribute('aria-busy');
+    }
+  });
+
   function updateCount() {
     const count = list.children.length;
     const badge = document.getElementById('invitation-count');
-    badge.textContent = count + ' pending';
+    badge.textContent = count + (nextCursor ? '+' : '') + ' pending';
     badge.hidden = count === 0;
     document.getElementById('empty').hidden = count > 0;
   }
@@ -91,7 +114,7 @@
       window.location.href = '/login.html?next=invitations';
       return;
     }
-    const [me, invitations] = await Promise.all([Sentinel.api('/v1/me'), Sentinel.api('/v1/me/invitations')]);
+    const me = await Sentinel.api('/v1/me');
     Shell.setUser(me);
     const current = Sentinel.claims().tid
       ? await Sentinel.api('/v1/tenants/current').catch(function () {
@@ -100,12 +123,18 @@
       : null;
     Shell.setTenant(current);
 
-    document.getElementById('loading').hidden = true;
-    list.replaceChildren.apply(list, invitations.items.map(invitationRow));
-    updateCount();
-    if (!me.emailVerified && invitations.items.length > 0) {
-      showMessage(message, 'Verify your email address before accepting an Invitation.', 'error');
+    if (!me.emailVerified) {
+      // Invitations are shown only to a verified email address.
+      document.getElementById('loading').hidden = true;
+      document.getElementById('empty-title').textContent = 'Verify your email first';
+      document.getElementById('empty-text').textContent =
+        'Follow the link in your verification email to see Invitations sent to your address.';
+      document.getElementById('empty').hidden = false;
+      return;
     }
+    const first = await Sentinel.api('/v1/me/invitations');
+    document.getElementById('loading').hidden = true;
+    showPage(first);
   }
 
   load().catch(function (error) {

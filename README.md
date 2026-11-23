@@ -113,7 +113,8 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - The invited User answers from the inbox (`GET /v1/me/invitations`, `POST :id/accept` or `:id/decline`, page `/invitations.html`). Only accepting creates a Membership, and it needs a verified email. Someone without an account signs up from the link (`POST /v1/invitations/preview`, `POST /v1/invitations/signup`); the account starts verified, since the link reached the address, and joins the Tenant in the same transaction.
 - `DELETE /v1/tenants/:tenantId/membership` leaves a Tenant.
 - A change that would leave a Tenant with no Tenant Admin (removing the flag, removing or leaving) gets `409`. Each such change locks the Tenant row first, so concurrent changes can't both pass the check.
-- `invitations` is Tenant-owned. Besides `tenant_isolation`, an `own_invitations` policy lets a User read Invitations to their own email under `ScopedPrisma.asUser()`. Answering one switches to the Invitation's Tenant context to write.
+- The three lists are paginated like the Audit Log (`limit`, `cursor`, `nextCursor`): Memberships oldest first, Invitations newest first.
+- `invitations` is Tenant-owned. Besides `tenant_isolation`, an `own_invitations` policy lets a User with a verified email read Invitations to that email under `ScopedPrisma.asUser()`; the inbox is refused (`403`) until the email is verified. Answering one switches the same transaction to the Invitation's Tenant context (`setTenantContext`) to write, as does signing up from a link, whose transaction also creates the User.
 - Every change is recorded in the Tenant's audit chain (`invitation.*`, `membership.*`). [`http/invitations.http`](http/invitations.http) walks through it.
 
 ## Audit Log

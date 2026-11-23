@@ -128,14 +128,60 @@
     return tr;
   }
 
+  // A paginated list: rows render into tbody, and its footer's Load more button fetches the next page.
+  function pagedList(path, tbody, footerId, buttonId, row) {
+    const footer = document.getElementById(footerId);
+    const button = document.getElementById(buttonId);
+    let nextCursor = null;
+    let total = 0;
+
+    function show(page, append) {
+      const rows = page.items.map(row);
+      if (append) tbody.append.apply(tbody, rows);
+      else tbody.replaceChildren.apply(tbody, rows);
+      total = (append ? total : 0) + page.items.length;
+      nextCursor = page.nextCursor;
+      footer.hidden = !nextCursor;
+    }
+
+    button.addEventListener('click', async function () {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      try {
+        show(await Sentinel.api(path + '?cursor=' + encodeURIComponent(nextCursor)), true);
+      } catch (error) {
+        showMessage(message, error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
+    });
+
+    return {
+      async reload() {
+        show(await Sentinel.api(path), false);
+      },
+      count() {
+        return total;
+      },
+      hasMore() {
+        return nextCursor !== null;
+      },
+    };
+  }
+
+  const members = pagedList('/v1/tenants/current/memberships', memberRows, 'members-more-footer', 'members-more', memberRow);
+  const invitations = pagedList(
+    '/v1/tenants/current/invitations',
+    invitationRows,
+    'invitations-more-footer',
+    'invitations-more',
+    invitationRow,
+  );
+
   async function refresh() {
-    let members;
-    let invitations;
     try {
-      [members, invitations] = await Promise.all([
-        Sentinel.api('/v1/tenants/current/memberships'),
-        Sentinel.api('/v1/tenants/current/invitations'),
-      ]);
+      await Promise.all([members.reload(), invitations.reload()]);
     } catch (error) {
       // Removing your own flag or Membership ends your access to this console.
       if (error.status === 403 || error.status === 404) {
@@ -144,11 +190,9 @@
       }
       throw error;
     }
-    document.getElementById('member-count').textContent =
-      members.items.length + (members.items.length === 1 ? ' member' : ' members');
-    memberRows.replaceChildren.apply(memberRows, members.items.map(memberRow));
-    invitationRows.replaceChildren.apply(invitationRows, invitations.items.map(invitationRow));
-    document.getElementById('invitations-empty').hidden = invitations.items.length > 0;
+    const shown = members.count() + (members.hasMore() ? '+' : '');
+    document.getElementById('member-count').textContent = shown + (members.count() === 1 && !members.hasMore() ? ' member' : ' members');
+    document.getElementById('invitations-empty').hidden = invitations.count() > 0;
   }
 
   const inviteForm = document.getElementById('invite-form');

@@ -1,9 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Membership } from '@prisma/client';
+import type { Membership, Prisma } from '@prisma/client';
 import type { AuditEventType } from '../audit/audit-event-types';
 import { AuditLog } from '../audit/audit-log.service';
+import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
-import type { ActiveTenantRef } from './tenancy.service';
 
 /** One Membership in the Tenant Admin's Memberships list. */
 export interface TenantMember {
@@ -16,13 +16,27 @@ export interface TenantMember {
   readonly joinedAt: Date;
 }
 
+type MembershipWithUser = Prisma.MembershipGetPayload<{ include: { user: true } }>;
+
+function toTenantMember(membership: MembershipWithUser): TenantMember {
+  return {
+    membershipId: membership.id,
+    userId: membership.userId,
+    email: membership.user.email,
+    firstName: membership.user.firstName,
+    lastName: membership.user.lastName,
+    isTenantAdmin: membership.isTenantAdmin,
+    joinedAt: membership.createdAt,
+  };
+}
+
 const LAST_ADMIN_MESSAGE = 'A Tenant must keep at least one Tenant Admin. Make someone else a Tenant Admin first.';
 
 /**
  * Locks the Tenant row until the transaction ends, so changes to its Memberships run one at a time
  * and two Tenant Admins can't each remove the other's flag at once.
  */
-export async function lockTenant(tx: ScopedTransaction, tenantId: string): Promise<void> {
+async function lockTenant(tx: ScopedTransaction, tenantId: string): Promise<void> {
   await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE`;
 }
 
@@ -43,50 +57,50 @@ export class MembershipsService {
     private readonly audit: AuditLog,
   ) {}
 
-  async list(tenantId: string): Promise<TenantMember[]> {
-    const memberships = await this.scoped.inTenant(tenantId, (tx) =>
-      tx.membership.findMany({ where: { tenantId }, include: { user: true }, orderBy: { createdAt: 'asc' } }),
+  /** The Tenant's Memberships, oldest first. */
+  async list(tenantId: string, query: PageQuery): Promise<Page<TenantMember>> {
+    const window = pageWindow(query, 'asc');
+    const rows = await this.scoped.inTenant(tenantId, (tx) =>
+      tx.membership.findMany({
+        where: { tenantId, ...window.after },
+        include: { user: true },
+        orderBy: window.orderBy,
+        take: window.take,
+      }),
     );
-    return memberships.map((membership) => ({
-      membershipId: membership.id,
-      userId: membership.userId,
-      email: membership.user.email,
-      firstName: membership.user.firstName,
-      lastName: membership.user.lastName,
-      isTenantAdmin: membership.isTenantAdmin,
-      joinedAt: membership.createdAt,
-    }));
+    return toPage(rows, window, toTenantMember);
   }
 
-  /** A Tenant Admin removes a Membership from the Active Tenant. */
-  async remove(active: ActiveTenantRef, actorUserId: string, membershipId: string): Promise<void> {
-    await this.scoped.inTenant(active.tenantId, async (tx) => {
-      await lockTenant(tx, active.tenantId);
-      const membership = await this.findIn(tx, active.tenantId, membershipId);
+  /** A Tenant Admin removes a Membership from the Active Tenant. Removing their own counts as leaving. */
+  async remove(tenantId: string, actorUserId: string, membershipId: string): Promise<void> {
+    await this.scoped.inTenant(tenantId, async (tx) => {
+      await lockTenant(tx, tenantId);
+      const membership = await this.findIn(tx, tenantId, membershipId);
       await assertAnotherAdmin(tx, membership);
       await tx.membership.delete({ where: { id: membership.id } });
-      await this.recordIn(tx, membership, 'membership.removed', actorUserId);
+      const eventType = membership.userId === actorUserId ? 'membership.left' : 'membership.removed';
+      await this.recordIn(tx, membership, eventType, actorUserId);
     });
   }
 
   /** A Tenant Admin gives or removes the Tenant Admin flag. Setting it to what it is already does nothing. */
   async setTenantAdmin(
-    active: ActiveTenantRef,
+    tenantId: string,
     actorUserId: string,
     membershipId: string,
     isTenantAdmin: boolean,
   ): Promise<TenantMember> {
-    await this.scoped.inTenant(active.tenantId, async (tx) => {
-      await lockTenant(tx, active.tenantId);
-      const membership = await this.findIn(tx, active.tenantId, membershipId);
-      if (membership.isTenantAdmin === isTenantAdmin) return;
-      if (!isTenantAdmin) await assertAnotherAdmin(tx, membership);
-      await tx.membership.update({ where: { id: membership.id }, data: { isTenantAdmin } });
-      await this.recordIn(tx, membership, isTenantAdmin ? 'membership.admin_granted' : 'membership.admin_revoked', actorUserId);
+    const updated = await this.scoped.inTenant(tenantId, async (tx) => {
+      await lockTenant(tx, tenantId);
+      const membership = await this.findIn(tx, tenantId, membershipId);
+      if (membership.isTenantAdmin !== isTenantAdmin) {
+        if (!isTenantAdmin) await assertAnotherAdmin(tx, membership);
+        await tx.membership.update({ where: { id: membership.id }, data: { isTenantAdmin } });
+        await this.recordIn(tx, membership, isTenantAdmin ? 'membership.admin_granted' : 'membership.admin_revoked', actorUserId);
+      }
+      return tx.membership.findUniqueOrThrow({ where: { id: membership.id }, include: { user: true } });
     });
-    const member = (await this.list(active.tenantId)).find((item) => item.membershipId === membershipId);
-    if (!member) throw new NotFoundException('Membership not found');
-    return member;
+    return toTenantMember(updated);
   }
 
   /** A User leaves a Tenant themselves. The last Tenant Admin can't. */
