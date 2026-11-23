@@ -52,7 +52,7 @@ Content-Type: application/json
   "conditions": {
     "amount": { "$lte": 1000 },
     "approvers": { "$elemMatch": { "membershipId": "${membership.id}" } },
-    "$or": [{ "status": "open" }, { "tenant": "${tenant.id}" }]
+    "status": { "$in": ["open", "submitted"] }
   }
 }
 
@@ -76,6 +76,13 @@ Authorization: Bearer {{tenantToken}}
 Content-Type: application/json
 
 { "resourceType": "Invoice", "action": "read", "conditions": { "amount": { "$where": "1" } } }
+
+### Rejected (400): $or, $and, $nor and $not aren't evaluated by CASL, so they would never match
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "read", "inverted": true, "conditions": { "$or": [{ "status": "draft" }, { "archived": true }] } }
 
 ### Rejected (400): unknown placeholder (only user, Membership and Tenant IDs)
 POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions

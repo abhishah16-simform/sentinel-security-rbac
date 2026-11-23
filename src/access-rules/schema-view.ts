@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import type { SchemaIndex } from '../applications/schema-index';
 
 export interface SchemaEntryView {
@@ -30,4 +31,4 @@ export function toSchemaView(resourceTypes: readonly SchemaRow[], schema: Schema
 /** Resource Types with their Actions, alphabetically, for toSchemaView. */
 export const SCHEMA_INCLUDE = {
   resourceTypes: { orderBy: { name: 'asc' }, include: { actions: { orderBy: { name: 'asc' } } } },
-} as const;
+} as const satisfies Prisma.ApplicationInclude;

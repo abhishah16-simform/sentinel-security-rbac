@@ -342,7 +342,7 @@ export class RolesService {
   private async detailIn(tx: ScopedTransaction, tenantId: string, roleId: string): Promise<RoleDetail> {
     const role = await this.findIn(tx, tenantId, roleId);
     const application = await tx.application.findUniqueOrThrow({ where: { id: role.applicationId }, include: SCHEMA_INCLUDE });
-    const schema = await loadSchemaIndex(tx, role.applicationId);
+    const schema = new SchemaIndex(application.resourceTypes);
     const enabled = await this.enabledApplications(tx, tenantId, [role.applicationId]);
     return {
       ...toSummary(role, schema, enabled.has(role.applicationId)),

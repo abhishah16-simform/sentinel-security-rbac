@@ -14,12 +14,9 @@ const MAX_DEPTH = 8;
 const MAX_LIST_LENGTH = 100;
 const MAX_STRING_LENGTH = 500;
 
-/** Logical operators that combine whole Conditions. */
-const LOGICAL_OPERATORS: readonly string[] = ['$and', '$or', '$nor'];
-
 /**
- * CASL's Mongo-style field operators (its default mongoQueryMatcher), except $regex and its
- * $options: a pattern from a Tenant Admin could make every Access Check slow (ReDoS).
+ * Exactly the operators CASL's default mongoQueryMatcher evaluates, except $regex and its $options:
+ * a pattern from a Tenant Admin could make every Access Check slow (ReDoS).
  */
 const FIELD_OPERATORS: readonly string[] = [
   '$eq',
@@ -34,9 +31,15 @@ const FIELD_OPERATORS: readonly string[] = [
   '$size',
   '$exists',
   '$elemMatch',
-  '$not',
 ];
 const REGEX_OPERATORS: readonly string[] = ['$regex', '$options'];
+
+/**
+ * MongoDB's logical operators. CASL's default matcher doesn't implement them: it reads "$or" as an
+ * attribute name, so a Condition using one never matches, and a Deny Rule built on it would deny
+ * nothing. Rejected with an explanation; write one Permission per alternative instead.
+ */
+const UNSUPPORTED_LOGICAL_OPERATORS: readonly string[] = ['$and', '$or', '$nor', '$not'];
 
 /** One segment of a dotted attribute path, such as "owner" in "owner.id", or an array index. */
 const FIELD_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
@@ -100,13 +103,16 @@ function checkFieldPath(field: string, path: string): void {
 
 function unknownOperator(operator: string, path: string): BadRequestException {
   if (REGEX_OPERATORS.includes(operator)) return invalid(path, `${operator} is not allowed in Conditions`);
+  if (UNSUPPORTED_LOGICAL_OPERATORS.includes(operator)) {
+    return invalid(path, `${operator} is not supported in Conditions; add one Permission per alternative instead`);
+  }
   return invalid(path, `unknown operator "${operator}"`);
 }
 
 /** True when every key is a field operator, so the object compares a value rather than naming attributes. */
 function isOperatorMap(value: Readonly<Record<string, unknown>>): boolean {
   const keys = Object.keys(value);
-  return keys.length > 0 && keys.every((key) => key.startsWith('$') && !LOGICAL_OPERATORS.includes(key));
+  return keys.length > 0 && keys.every((key) => key.startsWith('$'));
 }
 
 /** { $gte: 3, $lt: 10 }: operators applied to one attribute. */
@@ -156,30 +162,17 @@ function operatorOperand(
       if (Object.keys(query).length === 0) throw invalid(path, 'expected a non-empty object');
       return isOperatorMap(query) ? operatorMap(query, path, depth + 1) : conditionObject(query, path, depth + 1);
     }
-    case '$not':
-      return operatorMap(plainObject(operand, path, 'expected an object of operators'), path, depth + 1);
     default:
       throw unknownOperator(operator, path);
   }
 }
 
-/** { status: "open", "owner.id": "${user.id}", $or: [...] }: attributes and logical operators. */
+/** { status: "open", "owner.id": "${user.id}" }: attributes, all of which must match. */
 function conditionObject(value: Readonly<Record<string, unknown>>, path: string, depth: number): Prisma.InputJsonObject {
   checkDepth(path, depth);
   const result: Record<string, Prisma.InputJsonValue | null> = {};
   for (const [key, operand] of Object.entries(value)) {
     const at = `${path}.${key}`;
-    if (LOGICAL_OPERATORS.includes(key)) {
-      if (!Array.isArray(operand) || operand.length === 0) throw invalid(at, 'expected a non-empty list of Conditions');
-      if (operand.length > MAX_LIST_LENGTH) throw invalid(at, `lists may have at most ${MAX_LIST_LENGTH} items`);
-      result[key] = operand.map((item: unknown, index) => {
-        const itemPath = `${at}[${index}]`;
-        const condition = plainObject(item, itemPath, 'expected a non-empty object');
-        if (Object.keys(condition).length === 0) throw invalid(itemPath, 'expected a non-empty object');
-        return conditionObject(condition, itemPath, depth + 1);
-      });
-      continue;
-    }
     if (key.startsWith('$')) {
       if (FIELD_OPERATORS.includes(key)) throw invalid(at, `${key} must be applied to an attribute, as in { "status": { "${key}": … } }`);
       throw unknownOperator(key, at);
