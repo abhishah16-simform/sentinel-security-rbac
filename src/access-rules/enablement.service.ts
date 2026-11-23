@@ -8,6 +8,8 @@ import { AuditLog, type AuditPayload } from '../audit/audit-log.service';
 import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import { ROLE_WITH_PERMISSIONS, type RoleView, toRoleView } from './role-view';
+import { SCHEMA_INCLUDE, type TenantResourceTypeView, toSchemaView } from './schema-view';
+import { lockTenant } from './tenant-lock';
 
 /** A registered Application as a Tenant Admin browses it, with this Tenant's Enablement. */
 export interface TenantApplication {
@@ -21,15 +23,6 @@ export interface TenantApplication {
   readonly disabledAt: Date | null;
   /** This Tenant's Permissions for it that use Deprecated Resource Types or Actions. */
   readonly deprecatedPermissions: number;
-}
-
-export interface SchemaEntryView {
-  readonly name: string;
-  readonly deprecated: boolean;
-}
-
-export interface TenantResourceTypeView extends SchemaEntryView {
-  readonly actions: readonly SchemaEntryView[];
 }
 
 /** A Role Template that enabling the Application for the first time will copy. */
@@ -50,14 +43,6 @@ export interface TenantApplicationDetail extends TenantApplication {
   readonly roleTemplates: readonly TemplatePreview[];
   /** The Tenant's Roles for this Application, oldest first. Kept while it is disabled. */
   readonly roles: readonly RoleView[];
-}
-
-/**
- * Locks the Tenant row until the transaction ends, so a Tenant's Enablement changes run one at a
- * time and two Tenant Admins enabling at once copy the Role Templates only once.
- */
-async function lockTenant(tx: ScopedTransaction, tenantId: string): Promise<void> {
-  await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE`;
 }
 
 /** What an Enablement change starts from, with its locks held. */
@@ -202,7 +187,7 @@ export class EnablementService {
   private async detailIn(tx: ScopedTransaction, tenantId: string, applicationId: string): Promise<TenantApplicationDetail> {
     const application = await tx.application.findUnique({
       where: { id: applicationId },
-      include: { resourceTypes: { orderBy: { name: 'asc' }, include: { actions: { orderBy: { name: 'asc' } } } } },
+      include: SCHEMA_INCLUDE,
     });
     if (!application) throw new NotFoundException('Application not found');
     const enablement = await tx.enablement.findUnique({ where: { tenantId_applicationId: { tenantId, applicationId } } });
@@ -229,14 +214,7 @@ export class EnablementService {
     );
     return {
       ...toTenantApplication(application, enablement, deprecated),
-      resourceTypes: application.resourceTypes.map((resourceType) => ({
-        name: resourceType.name,
-        deprecated: resourceType.deprecatedAt !== null,
-        actions: resourceType.actions.map((action) => ({
-          name: action.name,
-          deprecated: schema.needsCleanUp(resourceType.name, action.name),
-        })),
-      })),
+      resourceTypes: toSchemaView(application.resourceTypes, schema),
       templatesCopied: enablement !== null,
       roleTemplates: previews,
       roles: roleViews,

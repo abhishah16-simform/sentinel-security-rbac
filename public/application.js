@@ -32,7 +32,10 @@
     const head = document.createElement('div');
     head.className = 'schema-head';
     const title = document.createElement('strong');
-    title.textContent = role.name;
+    const link = document.createElement('a');
+    link.href = '/role.html?id=' + encodeURIComponent(role.id);
+    link.textContent = role.name;
+    title.append(link);
     head.append(title);
     if (role.description) {
       const description = document.createElement('span');
@@ -124,6 +127,9 @@
     else if (application.enabled) intro = 'Copied from its Role Templates when you first enabled it. They are yours: template changes never reach them.';
     else intro = 'Kept while the Application is disabled. Enabling it again brings them back as they are.';
     document.getElementById('roles-intro').textContent = intro;
+    const manage = document.getElementById('manage-roles');
+    manage.href = '/roles.html?app=' + encodeURIComponent(application.id);
+    manage.hidden = !application.templatesCopied;
 
     const flagged = application.deprecatedPermissions;
     document.getElementById('deprecated-callout').hidden = flagged === 0;

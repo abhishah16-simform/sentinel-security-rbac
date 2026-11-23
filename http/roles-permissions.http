@@ -1,0 +1,108 @@
+# Roles and Permissions (ticket 09).
+# Needs a Tenant Admin access token with an Active Tenant (see http/tenants.http) and an Application the
+# Tenant has enabled (see http/enablement-role-templates.http), whose Schema has Invoice with read,
+# approve and export.
+
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token
+@applicationId = paste-application-id
+@roleId = paste-role-id
+@permissionId = paste-permission-id
+
+### Create a Role for an enabled Application (409 if it isn't enabled, or the name exists ignoring case).
+### Permissions are optional; each must use a Schema entry that isn't Deprecated (400 otherwise).
+POST {{baseUrl}}/v1/tenants/current/roles
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{
+  "applicationId": "{{applicationId}}",
+  "name": "Clerk",
+  "description": "Reads their own open invoices, never exports",
+  "permissions": [
+    { "resourceType": "Invoice", "action": "read", "conditions": { "ownerId": "${user.id}", "status": { "$in": ["open", "paid"] } } },
+    { "resourceType": "Invoice", "action": "export", "inverted": true }
+  ]
+}
+
+### The Tenant's Roles, oldest first (paginated: limit, cursor; optional applicationId)
+GET {{baseUrl}}/v1/tenants/current/roles?applicationId={{applicationId}}
+Authorization: Bearer {{tenantToken}}
+
+### One Role with its Permissions (Deprecated ones flagged) and the Application Schema
+GET {{baseUrl}}/v1/tenants/current/roles/{{roleId}}
+Authorization: Bearer {{tenantToken}}
+
+### Rename or re-describe. Works while the Application is disabled too.
+PATCH {{baseUrl}}/v1/tenants/current/roles/{{roleId}}
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "name": "Invoice Clerk" }
+
+### Add an allow Permission with a Condition. Placeholders: ${user.id}, ${membership.id}, ${tenant.id},
+### each as a whole value. 409 if the Role already has exactly this Permission.
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{
+  "resourceType": "Invoice",
+  "action": "approve",
+  "conditions": {
+    "amount": { "$lte": 1000 },
+    "approvers": { "$elemMatch": { "membershipId": "${membership.id}" } },
+    "$or": [{ "status": "open" }, { "tenant": "${tenant.id}" }]
+  }
+}
+
+### Add a Deny Rule (always wins over any allow)
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "approve", "inverted": true, "conditions": { "ownerId": "${user.id}" } }
+
+### Rejected (400): $regex is not allowed in Conditions
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "read", "conditions": { "name": { "$regex": "^a" } } }
+
+### Rejected (400): unknown operator
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "read", "conditions": { "amount": { "$where": "1" } } }
+
+### Rejected (400): unknown placeholder (only user, Membership and Tenant IDs)
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "read", "conditions": { "ownerEmail": "${user.email}" } }
+
+### Rejected (400): an Action outside the Application Schema (a Deprecated one is refused the same way)
+POST {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "resourceType": "Invoice", "action": "delete" }
+
+### Remove a Permission, including one on a Deprecated entry
+DELETE {{baseUrl}}/v1/tenants/current/roles/{{roleId}}/permissions/{{permissionId}}
+Authorization: Bearer {{tenantToken}}
+
+### Every Permission in the Tenant (paginated; optional applicationId and resourceType)
+GET {{baseUrl}}/v1/tenants/current/permissions?resourceType=Invoice
+Authorization: Bearer {{tenantToken}}
+
+### Delete a Role and its Permissions (204)
+DELETE {{baseUrl}}/v1/tenants/current/roles/{{roleId}}
+Authorization: Bearer {{tenantToken}}
+
+### The changes in the Tenant's Audit Log
+GET {{baseUrl}}/v1/audit-events?applicationId={{applicationId}}
+Authorization: Bearer {{tenantToken}}

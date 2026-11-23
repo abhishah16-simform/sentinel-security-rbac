@@ -24,6 +24,7 @@
     "platform-admin:create": "node dist/platform/create-platform-admin"
   },
   "dependencies": {
+    "@casl/ability": "7.1.1",
     "@nestjs/common": "11.2.11",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.2.11",

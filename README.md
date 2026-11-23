@@ -133,6 +133,14 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - A Permission whose Resource Type or Action is Deprecated keeps working but is flagged (`deprecated: true`) on both consoles, and the Applications list counts them per Application.
 - Enablement changes are recorded in the Tenant's chain (`application.enabled`, `application.disabled`). The code lives in `src/access-rules/` (Tenant side), which imports the platform-level `applications` module, never the reverse. [`http/enablement-role-templates.http`](http/enablement-role-templates.http) walks through it.
 
+## Roles and Permissions
+
+- Tenant Admins manage their Tenant's Roles under `/v1/tenants/current/roles` (list with an optional `applicationId` filter, `POST`, `GET :id`, `PATCH :id` for name and description, `DELETE :id`, `POST :id/permissions`, `DELETE :id/permissions/:pid`). `GET /v1/tenants/current/permissions` lists every Permission in the Tenant, filterable by `applicationId` and `resourceType`. The console pages are `/roles.html`, `/role.html?id=…` and `/permissions.html`.
+- Creating a Role or adding a Permission needs the Application enabled (409 otherwise). Renaming, deleting and removing Permissions also work while it is disabled, so a Tenant can clean up. Role names are unique within an Application ignoring case; every change locks the Tenant row, and adding a Permission also holds the Application row `FOR SHARE` so its Schema entry can't be Deprecated at the same moment.
+- A Permission is `{ resourceType, action, inverted, conditions }`. Conditions are CASL/Mongo-style JSON, checked on save by `parseConditions()` in `src/access-rules/conditions.ts`: only CASL's field operators (`$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`, `$nin`, `$all`, `$size`, `$exists`, `$elemMatch`, `$not`) and `$and`, `$or`, `$nor`; no `$regex` or `$options`; attribute paths are dotted identifiers; the only placeholders are `${user.id}`, `${membership.id}` and `${tenant.id}`, each as a whole string value. The result must also compile with CASL's own matcher. An empty object means no Condition.
+- The JSON body parser refuses any `__proto__` key (`src/common/json-body.ts`): copying a body into a DTO drops such keys silently, which would let part of a Condition vanish and widen its Permission.
+- Every change is recorded in the Tenant's chain (`role.created`, `role.updated`, `role.deleted`, `role.permission_added`, `role.permission_removed`) with the Permission written out, Condition included. [`http/roles-permissions.http`](http/roles-permissions.http) walks through it.
+
 ## Audit Log
 
 - Every authentication event and admin change goes through one writer (`AuditLog`), in the same transaction as the change it records. See `src/audit/audit-event-types.ts` for the event types.

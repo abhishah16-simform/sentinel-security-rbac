@@ -6,7 +6,11 @@
   if (!sidebar) return;
   const path = window.location.pathname === '/' ? '/index.html' : window.location.pathname;
   // Detail pages highlight the list they belong to.
-  const detailOf = { '/platform-application.html': '/platform-applications.html', '/application.html': '/applications.html' };
+  const detailOf = {
+    '/platform-application.html': '/platform-applications.html',
+    '/application.html': '/applications.html',
+    '/role.html': '/roles.html',
+  };
   const current = detailOf[path] || path;
 
   function navItem(href, icon, label) {
@@ -35,8 +39,8 @@
     '</nav>' +
     '<nav class="nav-section" aria-label="Access control">' +
     '<div class="nav-label">Access control</div>' +
-    soonItem('key', 'Roles') +
-    soonItem('lock', 'Permissions') +
+    navItem('/roles.html', 'key', 'Roles') +
+    navItem('/permissions.html', 'lock', 'Permissions') +
     navItem('/applications.html', 'grid', 'Applications') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +

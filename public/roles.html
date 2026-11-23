@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Roles · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Roles</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Roles</h1>
+              <p class="subtitle">Each Role belongs to one Application and bundles the Permissions its holders get.</p>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/tenants.html" id="blocked-link" hidden>Choose a Tenant</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="new-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="new-title">New Role</h2>
+                  <p>For an Application your Tenant has enabled. Add its Permissions on the next page.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="plus"></i></span>
+              </div>
+              <form id="role-form" class="inline-form form" hidden>
+                <label>
+                  Application
+                  <select name="applicationId" id="new-application" required></select>
+                </label>
+                <div class="row">
+                  <label>
+                    Name
+                    <input name="name" required maxlength="100" autocomplete="off" placeholder="Approver" />
+                  </label>
+                  <label>
+                    Description
+                    <input name="description" maxlength="500" autocomplete="off" placeholder="Approves invoices up to 1,000" />
+                  </label>
+                </div>
+                <div class="actions"><button type="submit"><i data-icon="plus"></i>Create Role</button></div>
+              </form>
+              <div id="no-enabled" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+                <strong>No enabled Applications</strong>
+                <span>Enable an Application first; it brings its default Roles with it.</span>
+                <a class="button secondary" href="/applications.html">Applications</a>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="list-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="list-title">Your Roles</h2>
+                  <p>Oldest first. Roles for a disabled Application are kept but give no access until it is enabled again.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="key"></i></span>
+              </div>
+              <form id="filters" class="inline-form filters">
+                <label>
+                  Application
+                  <select name="applicationId" id="filter-application">
+                    <option value="">All Applications</option>
+                  </select>
+                </label>
+              </form>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Name</th>
+                      <th scope="col">Application</th>
+                      <th scope="col">Permissions</th>
+                      <th scope="col">Clean-up</th>
+                      <th scope="col" class="num">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows"></tbody>
+                </table>
+              </div>
+              <div id="empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="key"></i></span>
+                <strong>No Roles</strong>
+                <span id="empty-text">Create one above, or enable an Application to get its default Roles.</span>
+              </div>
+              <div class="card-footer" id="more-footer" hidden>
+                <span class="hint">More Roles to show</span>
+                <button type="button" class="secondary small" id="more">Load more</button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/tenant-applications.js"></script>
+    <script src="/roles.js"></script>
+  </body>
+</html>

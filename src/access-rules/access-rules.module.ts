@@ -4,6 +4,8 @@ import { ApplicationsModule } from '../applications/applications.module';
 import { AuditModule } from '../audit/audit.module';
 import { EnablementController } from './enablement.controller';
 import { EnablementService } from './enablement.service';
+import { RolesController } from './roles.controller';
+import { RolesService } from './roles.service';
 
 /**
  * Tenant-owned access rules: Enablement of Applications, and the Roles and Permissions inside them.
@@ -11,7 +13,7 @@ import { EnablementService } from './enablement.service';
  */
 @Module({
   imports: [AccessTokenModule, ApplicationsModule, AuditModule],
-  controllers: [EnablementController],
-  providers: [EnablementService],
+  controllers: [EnablementController, RolesController],
+  providers: [EnablementService, RolesService],
 })
 export class AccessRulesModule {}
