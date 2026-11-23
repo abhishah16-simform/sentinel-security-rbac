@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { AuditEventType } from '../audit/audit-event-types';
@@ -134,6 +134,18 @@ export class ApplicationsService {
     private readonly audit: AuditLog,
   ) {}
 
+  /**
+   * The Application these client credentials belong to, or null if the client ID is unknown or the
+   * secret isn't its current one. Hashes are compared in constant time.
+   */
+  async verifyClient(clientId: string, clientSecret: string): Promise<ApplicationSummary | null> {
+    const application = await this.prisma.application.findUnique({ where: { clientId } });
+    const presented = Buffer.from(hashOpaqueToken(clientSecret), 'hex');
+    const stored = Buffer.from(application?.clientSecretHash ?? hashOpaqueToken(''), 'hex');
+    const matches = presented.length === stored.length && timingSafeEqual(presented, stored);
+    return application && matches ? toSummary(application) : null;
+  }
+
   /** Newest first. */
   async list(query: PageQuery): Promise<Page<ApplicationSummary>> {
     const window = pageWindow(query, 'desc');
@@ -175,15 +187,17 @@ export class ApplicationsService {
   /** Issues a new client secret. The previous one stops working at once. */
   async rotateSecret(actorUserId: string, applicationId: string): Promise<IssuedSecret> {
     const clientSecret = generateOpaqueToken();
-    await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.application.updateMany({
+    const application = await this.prisma.$transaction(async (tx) => {
+      await this.lockApplication(tx, applicationId);
+      const updated = await tx.application.update({
         where: { id: applicationId },
         data: { clientSecretHash: hashOpaqueToken(clientSecret), secretIssuedAt: new Date() },
+        include: WITH_SCHEMA,
       });
-      if (count === 0) throw new NotFoundException('Application not found');
       await this.recordIn(tx, 'application.secret_rotated', actorUserId, applicationId, {});
+      return updated;
     });
-    return { application: await this.get(applicationId), clientSecret };
+    return { application: toDetail(application), clientSecret };
   }
 
   /** Adds a Resource Type to the Application Schema, optionally with its first Actions. */
@@ -242,6 +256,7 @@ export class ApplicationsService {
   /** Deprecates a Resource Type, and with it all its Actions. It is never removed. */
   async deprecateResourceType(actorUserId: string, applicationId: string, resourceTypeId: string): Promise<ApplicationDetail> {
     await this.prisma.$transaction(async (tx) => {
+      await this.lockApplication(tx, applicationId);
       const resourceType = await tx.resourceType.findFirst({ where: { id: resourceTypeId, applicationId } });
       if (!resourceType) throw new NotFoundException('Resource Type not found');
       const { count } = await tx.resourceType.updateMany({
@@ -265,6 +280,7 @@ export class ApplicationsService {
     actionId: string,
   ): Promise<ApplicationDetail> {
     await this.prisma.$transaction(async (tx) => {
+      await this.lockApplication(tx, applicationId);
       const action = await tx.action.findFirst({
         where: { id: actionId, resourceTypeId, resourceType: { applicationId } },
         include: { resourceType: true },
@@ -286,8 +302,9 @@ export class ApplicationsService {
   }
 
   /**
-   * Locks the Application row until the transaction ends, so concurrent schema additions run one at
-   * a time and the ignore-case uniqueness check can't be raced. Returns it with its Resource Types.
+   * Locks the Application row until the transaction ends, so changes to one Application run one at a
+   * time: the ignore-case uniqueness check can't be raced, and an Action can't be added to a Resource
+   * Type that is being Deprecated. Returns it with its Resource Types.
    */
   private async lockApplication(
     tx: ScopedTransaction,

@@ -1,13 +1,14 @@
 import { Transform } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsString, MaxLength, MinLength } from 'class-validator';
+import { trimString } from '../../common/transforms';
 
 export const APPLICATION_NAME_MAX_LENGTH = 100;
 export const MAX_ALLOWED_ORIGINS = 20;
-
-const trim = ({ value }: { value: unknown }): unknown => (typeof value === 'string' ? value.trim() : value);
+/** Longer than any real origin; the service checks the format. */
+const ORIGIN_MAX_LENGTH = 200;
 
 export class RegisterApplicationDto {
-  @Transform(trim)
+  @Transform(trimString)
   @IsString()
   @MinLength(1)
   @MaxLength(APPLICATION_NAME_MAX_LENGTH)
@@ -17,6 +18,6 @@ export class RegisterApplicationDto {
   @IsArray()
   @ArrayMaxSize(MAX_ALLOWED_ORIGINS)
   @IsString({ each: true })
-  @MaxLength(200, { each: true })
+  @MaxLength(ORIGIN_MAX_LENGTH, { each: true })
   allowedOrigins!: string[];
 }

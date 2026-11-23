@@ -10,8 +10,9 @@ import { parseArgs } from 'node:util';
 import { Logger, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { isEmail } from 'class-validator';
 import { validateEnv } from '../config/env';
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../identity/credential-limits';
+import { EMAIL_MAX_LENGTH, NAME_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../identity/credential-limits';
 import { IdentityModule } from '../identity/identity.module';
 import { IdentityService } from '../identity/identity.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -71,6 +72,11 @@ async function main(): Promise<void> {
   const firstName = values['first-name']?.trim();
   const lastName = values['last-name']?.trim();
   if (!email || !firstName || !lastName) throw new Error(USAGE);
+  // The same rules as the signup form.
+  if (!isEmail(email) || email.length > EMAIL_MAX_LENGTH) throw new Error(`"${email}" is not a valid email address.`);
+  if (firstName.length > NAME_MAX_LENGTH || lastName.length > NAME_MAX_LENGTH) {
+    throw new Error(`Names can be at most ${NAME_MAX_LENGTH} characters.`);
+  }
 
   const password = await readPassword();
   if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {

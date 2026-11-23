@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { AccessTokenGuard, CurrentClaims } from '../access-token/access-token.guard';
 import type { AccessTokenClaims } from '../access-token/access-token.service';
 import { PlatformAdminGuard } from '../access-token/admin.guards';
@@ -26,6 +26,7 @@ export class ApplicationsController {
 
   /** Register an Application. The response holds the client secret: it is shown this once only. */
   @Post()
+  @Header('Cache-Control', 'no-store')
   register(@CurrentClaims() claims: AccessTokenClaims, @Body() body: RegisterApplicationDto): Promise<IssuedSecret> {
     return this.applications.register(claims.sub, body);
   }
@@ -39,6 +40,7 @@ export class ApplicationsController {
   /** Issue a new client secret, shown this once. The old one stops working at once. */
   @Post(':applicationId/secret')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   rotateSecret(
     @CurrentClaims() claims: AccessTokenClaims,
     @Param('applicationId', ParseUUIDPipe) applicationId: string,
