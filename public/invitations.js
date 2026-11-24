@@ -46,10 +46,12 @@
       try {
         const membership = await Sentinel.api('/v1/me/invitations/' + invitation.id + '/accept', { method: 'POST' });
         end.replaceChildren(
-          actionButton('Switch to it', 'secondary', 'Switch to ' + membership.tenantName, async function () {
-            await Sentinel.switchTenant(membership.tenantId);
-            window.location.href = '/';
-          }),
+          membership.suspended
+            ? Object.assign(document.createElement('span'), { className: 'badge bad', textContent: 'Suspended' })
+            : actionButton('Switch to it', 'secondary', 'Switch to ' + membership.tenantName, async function () {
+                await Sentinel.switchTenant(membership.tenantId);
+                window.location.href = '/';
+              }),
         );
         detail.textContent = 'You joined ' + membership.tenantName + '.';
         showMessage(message, 'You are now a member of ' + membership.tenantName + '.', 'success');

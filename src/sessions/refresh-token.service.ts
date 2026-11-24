@@ -16,6 +16,12 @@ function activeTenantOf(chain: RefreshChain): ActiveTenantRef | null {
     : null;
 }
 
+/** Whether a Platform Admin has suspended the Tenant. The Tenant list is platform-level: no RLS. */
+async function isSuspended(tx: ScopedTransaction, tenantId: string): Promise<boolean> {
+  const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { suspendedAt: true } });
+  return tenant !== null && tenant.suspendedAt !== null;
+}
+
 /** An Audit Log entry about one login (refresh chain), acted on by its User. */
 function sessionEvent(
   chain: Pick<RefreshChain, 'id' | 'userId'>,
@@ -40,6 +46,8 @@ export type RotationResult =
       readonly next: IssuedRefreshToken;
     }
   | { readonly kind: 'rejected' }
+  /** Switching into a Suspended Tenant was refused; the token was not used. */
+  | { readonly kind: 'tenant-suspended' }
   | { readonly kind: 'reused'; readonly userId: string; readonly chainId: string };
 
 /**
@@ -86,7 +94,8 @@ export class RefreshTokenService {
 
   /**
    * Uses a refresh token once, returning its replacement in the same chain, or revokes the chain
-   * if the token was already used. With switchTo, the login's Active Tenant changes as well.
+   * if the token was already used. With switchTo, the login's Active Tenant changes as well, unless
+   * that Tenant is suspended. A suspended Active Tenant is dropped from the login.
    */
   async rotate(token: string, switchTo?: ActiveTenantRef): Promise<RotationResult> {
     const tokenHash = hashOpaqueToken(token);
@@ -109,13 +118,18 @@ export class RefreshTokenService {
       }
       if (current.expiresAt <= now) return { kind: 'rejected' };
 
+      if (switchTo && (await isSuspended(tx, switchTo.tenantId))) return { kind: 'tenant-suspended' };
+      // A login whose Active Tenant was suspended keeps going without it: no new token names that Tenant.
+      const kept = activeTenantOf(chain);
+      const activeTenant = switchTo ?? (kept && !(await isSuspended(tx, kept.tenantId)) ? kept : null);
+
       await tx.refreshToken.update({ where: { id: current.id }, data: { usedAt: now } });
-      const activeTenant = switchTo ?? activeTenantOf(chain);
       const changed =
         chain.activeTenantId !== (activeTenant?.tenantId ?? null) ||
         chain.activeMembershipId !== (activeTenant?.membershipId ?? null);
       if (changed) {
-        // Switching, or clearing a Tenant whose Membership was deleted (the FK nulled only the Membership).
+        // Switching, or clearing a Tenant that was suspended or whose Membership was deleted (the FK
+        // nulled only the Membership).
         await tx.refreshChain.update({
           where: { id: chain.id },
           data: { activeTenantId: activeTenant?.tenantId ?? null, activeMembershipId: activeTenant?.membershipId ?? null },

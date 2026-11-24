@@ -22,6 +22,8 @@ export const AUDIT_EVENT_TYPES = {
   'auth.logged_out_everywhere': 'Logged out everywhere',
   'tenant.created': 'Created Tenant',
   'tenant.switched': 'Switched Active Tenant',
+  'tenant.suspended': 'Suspended Tenant',
+  'tenant.reactivated': 'Reactivated Tenant',
   'invitation.sent': 'Sent Invitation',
   'invitation.resent': 'Resent Invitation',
   'invitation.cancelled': 'Cancelled Invitation',

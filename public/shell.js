@@ -48,7 +48,7 @@
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +
     '<div class="nav-label">Platform</div>' +
     navItem('/platform-applications.html', 'server', 'Applications') +
-    soonItem('building', 'All Tenants') +
+    navItem('/platform-tenants.html', 'building', 'Tenants') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Compliance">' +
     '<div class="nav-label">Compliance</div>' +

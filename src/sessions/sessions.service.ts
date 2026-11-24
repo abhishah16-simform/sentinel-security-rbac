@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ACCESS_TOKEN_TTL_SECONDS, AccessTokenService } from '../access-token/access-token.service';
 import { AuditLog } from '../audit/audit-log.service';
+import { TENANT_SUSPENDED_MESSAGE } from '../common/tenant-suspended';
 import { normalizeEmail } from '../identity/email';
 import { IdentityService } from '../identity/identity.service';
 import { AccountLockedException, AttemptInProgressException } from '../identity/lockout';
@@ -75,13 +76,15 @@ export class SessionsService {
     return this.passwordReset.complete(token, code, newPassword, (tx, userId) => this.refreshTokens.revokeAllIn(tx, userId));
   }
 
+  /** New tokens in the same login. A suspended Active Tenant is dropped, so the tokens name no Tenant. */
   async refresh(refreshToken: string): Promise<SessionTokens> {
     return this.toSessionTokens(await this.refreshTokens.rotate(refreshToken));
   }
 
   /**
    * Makes a Tenant the login's Active Tenant: uses the refresh token once and returns new tokens
-   * in the same chain that carry the Tenant and Membership. The User must belong to the Tenant.
+   * in the same chain that carry the Tenant and Membership. The User must belong to the Tenant, and
+   * it must not be suspended.
    */
   async switchTenant(refreshToken: string, tenantId: string): Promise<SessionTokens> {
     const userId = await this.refreshTokens.ownerOfUsable(refreshToken);
@@ -92,9 +95,13 @@ export class SessionsService {
     const membership = await this.tenancy.findMembership(userId, tenantId);
     if (!membership) throw new ForbiddenException('You are not a member of that Tenant.');
 
-    return this.toSessionTokens(
-      await this.refreshTokens.rotate(refreshToken, { tenantId: membership.tenantId, membershipId: membership.membershipId }),
-    );
+    const result = await this.refreshTokens.rotate(refreshToken, {
+      tenantId: membership.tenantId,
+      membershipId: membership.membershipId,
+    });
+    // 403, not 401: the login itself is fine and keeps its refresh token.
+    if (result.kind === 'tenant-suspended') throw new ForbiddenException(TENANT_SUSPENDED_MESSAGE);
+    return this.toSessionTokens(result);
   }
 
   logout(refreshToken: string): Promise<void> {

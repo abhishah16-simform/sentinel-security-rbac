@@ -125,6 +125,13 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - The Application Schema: `POST …/:id/resource-types` (with optional `actions`), `POST …/resource-types/:rtId/actions`, and `POST …/deprecate` on either. Entries are never removed. A Deprecated Resource Type makes its Actions count as Deprecated and takes no new Actions. Names are identifiers (a letter, then letters, digits, `_` or `-`), unique ignoring case; CASL's `manage` and `all` are reserved.
 - Every Platform Admin action is recorded in the platform audit chain with the Application's ID. The console pages are `/platform-applications.html` and `/platform-application.html?id=…`, shown in a Platform section of the sidebar for Platform Admins only. [`http/platform-applications.http`](http/platform-applications.http) walks through it.
 
+## Tenant list and suspension
+
+- `GET /v1/platform/tenants` lists every Tenant for Platform Admins, newest first and paginated: name, Membership count, enabled Application count, creation date and `suspendedAt`. The counts are the only Tenant-owned reads: each is made inside that Tenant's own RLS context (`setTenantContext`) in one read-only transaction, and only the numbers are returned.
+- `POST /v1/platform/tenants/:id/suspend` and `…/reactivate` set and clear `tenants.suspendedAt` (409 when already in that state), locking the Tenant row, and record `tenant.suspended` or `tenant.reactivated` in the platform chain.
+- While a Tenant is suspended: switching into it gets `403`; a refresh of a login whose Active Tenant it is drops the Tenant from the login (the new access token has no `tid`, and the Tenant picker shows it as Suspended); `TenantAdminGuard` refuses its console at once, even with an unexpired access token; and every Access Check in it is denied with `tenant-suspended`. Its data is untouched, and Users can still leave it.
+- The console page is `/platform-tenants.html`. [`http/platform-tenants.http`](http/platform-tenants.http) walks through it.
+
 ## Role Templates and Enablement
 
 - Role Templates are default Roles an Application ships, kept in the platform-level `role_templates` and `role_template_permissions` tables. Platform Admins manage them under `/v1/platform/applications/:id/role-templates` (list, `POST`, `PATCH :tid` for name and description, `DELETE :tid`, `POST :tid/permissions`, `DELETE :tid/permissions/:pid`). A Permission is `{ resourceType, action, inverted }`, CASL's raw-rule shape; a new one must use Schema entries that aren't Deprecated. Changes lock the Application row, like Schema changes, and are recorded in the platform chain (`role_template.*`).

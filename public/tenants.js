@@ -20,7 +20,7 @@
     const name = document.createElement('strong');
     name.textContent = tenant.tenantName;
     const role = document.createElement('small');
-    role.textContent = tenant.isTenantAdmin ? 'Tenant Admin' : 'Member';
+    role.textContent = (tenant.isTenantAdmin ? 'Tenant Admin' : 'Member') + (tenant.suspended ? ' · Suspended by SENTINEL' : '');
     text.append(name, role);
     info.append(avatar, text);
     li.append(info);
@@ -47,7 +47,13 @@
       }
     });
     end.append(leave);
-    if (tenant.tenantId === activeTenantId) {
+    if (tenant.suspended) {
+      // Switching in is refused while a Platform Admin has the Tenant suspended.
+      const suspended = document.createElement('span');
+      suspended.textContent = 'Suspended';
+      suspended.className = 'badge bad';
+      end.append(suspended);
+    } else if (tenant.tenantId === activeTenantId) {
       const current = document.createElement('span');
       current.textContent = 'Active';
       current.className = 'badge ok';

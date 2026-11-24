@@ -1,0 +1,29 @@
+# Platform Admin Tenant list and Tenant suspension (ticket 12).
+# Log in as a Platform Admin with http/auth.http (see http/platform-applications.http for creating one).
+
+@baseUrl = http://localhost:9800
+@accessToken = paste-platform-admin-access-token
+@tenantId = paste-tenant-id
+
+### Every Tenant, newest first (paginated: limit, cursor), with Membership count, enabled
+### Application count, creation date and suspendedAt. Nothing from inside the Tenant.
+GET {{baseUrl}}/v1/platform/tenants
+Authorization: Bearer {{accessToken}}
+
+### Suspend a Tenant (409 if already suspended). Recorded as tenant.suspended in the platform chain.
+### From now on: switching into it gets 403, a refresh drops it from the login (the new access token
+### has no tid), its Tenant Admin endpoints get 403, and Access Checks deny with tenant-suspended.
+POST {{baseUrl}}/v1/platform/tenants/{{tenantId}}/suspend
+Authorization: Bearer {{accessToken}}
+
+### Reactivate it (409 if not suspended). Recorded as tenant.reactivated in the platform chain.
+POST {{baseUrl}}/v1/platform/tenants/{{tenantId}}/reactivate
+Authorization: Bearer {{accessToken}}
+
+### The platform chain shows both events (Platform Admin, no Active Tenant)
+GET {{baseUrl}}/v1/platform/audit-events?eventType=tenant.suspended
+Authorization: Bearer {{accessToken}}
+
+### A non-admin gets 403 on all of the above
+GET {{baseUrl}}/v1/platform/tenants
+Authorization: Bearer paste-ordinary-user-access-token

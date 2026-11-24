@@ -11,6 +11,8 @@ export interface TenantMembership {
   readonly tenantName: string;
   readonly membershipId: string;
   readonly isTenantAdmin: boolean;
+  /** A Platform Admin has suspended the Tenant: nobody can switch into it or pass an Access Check in it. */
+  readonly suspended: boolean;
 }
 
 /** Identifies the Membership a request acts through, as carried in the access token. */
@@ -27,6 +29,7 @@ export function toTenantMembership(membership: MembershipWithTenant): TenantMemb
     tenantName: membership.tenant.name,
     membershipId: membership.id,
     isTenantAdmin: membership.isTenantAdmin,
+    suspended: membership.tenant.suspendedAt !== null,
   };
 }
 
