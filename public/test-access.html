@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Test Access · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Test Access</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Test Access</h1>
+              <p class="subtitle">See what an Access Check would answer for a member, without the Application's client secret.</p>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/tenants.html" id="blocked-link" hidden>Choose a Tenant</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="ask-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="ask-title">Ask</h2>
+                  <p>The same rules as a real Access Check: suspension, Enablement, active Role Assignments, Conditions, and deny wins. Tests aren't written to the Audit Log.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="shieldCheck"></i></span>
+              </div>
+              <form id="test-form" class="inline-form form">
+                <div class="row">
+                  <label>
+                    Member
+                    <select name="membershipId" id="member" required></select>
+                  </label>
+                  <label>
+                    Application
+                    <select name="applicationId" id="application" required></select>
+                  </label>
+                </div>
+                <div class="row">
+                  <label>
+                    Resource Type
+                    <select name="resourceType" id="resource-type" required></select>
+                  </label>
+                  <label>
+                    Action
+                    <select name="action" id="action" required></select>
+                  </label>
+                  <label>
+                    Resource ID (optional)
+                    <input name="resourceId" maxlength="256" placeholder="inv-1001" />
+                  </label>
+                </div>
+                <label>
+                  Resource attributes (JSON, optional)
+                  <textarea name="attributes" id="attributes" class="mono" rows="4" spellcheck="false" placeholder='{ "ownerId": "…", "amount": 500 }'></textarea>
+                </label>
+                <p class="hint" id="placeholders"></p>
+                <div class="actions"><button type="submit"><i data-icon="search"></i>Test access</button></div>
+              </form>
+              <div id="no-applications" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+                <strong>No Applications with a Schema</strong>
+                <span>Enable an Application that declares Resource Types first.</span>
+                <a class="button secondary" href="/applications.html">Applications</a>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="answer-title" id="answer" hidden aria-live="polite">
+              <div class="card-header">
+                <div>
+                  <h2 id="answer-title">Answer</h2>
+                  <p id="answer-question"></p>
+                </div>
+                <span id="answer-badge"></span>
+              </div>
+              <div class="answer-body">
+                <p id="answer-reason"></p>
+                <dl class="answer-rule" id="answer-rule" hidden>
+                  <dt>Role</dt>
+                  <dd><a id="answer-role"></a></dd>
+                  <dt>Permission</dt>
+                  <dd id="answer-permission"></dd>
+                  <dt>Condition</dt>
+                  <dd><code class="mono condition" id="answer-condition"></code></dd>
+                </dl>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/test-access.js"></script>
+  </body>
+</html>

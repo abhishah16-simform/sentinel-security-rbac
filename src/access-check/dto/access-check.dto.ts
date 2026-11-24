@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsObject, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { SCHEMA_NAME_PATTERN, SCHEMA_NAME_RULE } from '../../applications/schema-names';
 
 /** Far longer than any access token Sentinel issues. */
@@ -20,13 +20,8 @@ export class AccessCheckResourceDto {
   attributes?: Record<string, unknown>;
 }
 
-export class AccessCheckDto {
-  /** The User's Sentinel access token, with the Active Tenant the check is made in. */
-  @IsString()
-  @MinLength(1)
-  @MaxLength(ACCESS_TOKEN_MAX_LENGTH)
-  accessToken!: string;
-
+/** The question both an Access Check and a Tenant Admin's test ask. */
+export class AccessQuestionDto {
   /** An Action of the Resource Type in the Application Schema, matched case-sensitively. */
   @IsString()
   @Matches(SCHEMA_NAME_PATTERN, { message: `action ${SCHEMA_NAME_RULE}` })
@@ -42,4 +37,22 @@ export class AccessCheckDto {
   @ValidateNested()
   @Type(() => AccessCheckResourceDto)
   resource?: AccessCheckResourceDto;
+}
+
+export class AccessCheckDto extends AccessQuestionDto {
+  /** The User's Sentinel access token, with the Active Tenant the check is made in. */
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ACCESS_TOKEN_MAX_LENGTH)
+  accessToken!: string;
+}
+
+export class TestAccessDto extends AccessQuestionDto {
+  /** A Membership of the Active Tenant, whose access is tested. */
+  @IsUUID()
+  membershipId!: string;
+
+  /** The Application the Access Check would come from. */
+  @IsUUID()
+  applicationId!: string;
 }

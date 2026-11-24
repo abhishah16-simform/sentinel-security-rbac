@@ -1,0 +1,48 @@
+# Test access (ticket 13-a): what an Access Check would answer for one member, asked by a Tenant
+# Admin from the console without the Application's client secret. The page is /test-access.html.
+# Needs a Tenant Admin access token with an Active Tenant (see http/tenants.http) and the setup in
+# http/access-checks.http (an enabled Application with Invoice, a Role, and a Role Assignment).
+
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token
+@membershipId = paste-membership-id
+@applicationId = paste-application-id
+@userId = paste-that-members-user-id
+
+### The same { allowed, reason, roleId?, permissionId? } an Application would get
+POST {{baseUrl}}/v1/tenants/current/test-access
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "applicationId": "{{applicationId}}", "resourceType": "Invoice", "action": "approve" }
+
+### With resource attributes, for Conditions such as { "ownerId": "${user.id}" }
+POST {{baseUrl}}/v1/tenants/current/test-access
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{
+  "membershipId": "{{membershipId}}",
+  "applicationId": "{{applicationId}}",
+  "resourceType": "Invoice",
+  "action": "read",
+  "resource": { "id": "inv-1002", "attributes": { "ownerId": "{{userId}}" } }
+}
+
+### 400: an Action outside the Application Schema
+POST {{baseUrl}}/v1/tenants/current/test-access
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "applicationId": "{{applicationId}}", "resourceType": "Invoice", "action": "delete" }
+
+### 404: a Membership that isn't in the Active Tenant (or an unknown Application)
+POST {{baseUrl}}/v1/tenants/current/test-access
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "00000000-0000-4000-8000-000000000000", "applicationId": "{{applicationId}}", "resourceType": "Invoice", "action": "approve" }
+
+### Tests aren't Access Checks: nothing new appears here after running the requests above
+GET {{baseUrl}}/v1/audit-events?eventType=access_check.allowed
+Authorization: Bearer {{tenantToken}}

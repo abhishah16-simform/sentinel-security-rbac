@@ -42,6 +42,7 @@
     navItem('/roles.html', 'key', 'Roles') +
     navItem('/permissions.html', 'lock', 'Permissions') +
     navItem('/role-assignments.html', 'shieldCheck', 'Role assignments') +
+    navItem('/test-access.html', 'search', 'Test access') +
     navItem('/applications.html', 'grid', 'Applications') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +

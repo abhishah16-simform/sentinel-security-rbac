@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { activeAssignmentWhere } from '../access-rules/role-assignment-ending';
 import { type AccessTokenClaims, AccessTokenService } from '../access-token/access-token.service';
 import type { ApplicationSummary } from '../applications/applications.service';
@@ -20,14 +20,24 @@ export interface AccessCheckResult {
   readonly permissionId?: string;
 }
 
-export interface AccessCheckInput {
-  readonly accessToken: string;
+/** What is asked: an Action on a resource of a Resource Type. */
+export interface AccessQuestion {
   readonly action: string;
   readonly resourceType: string;
   readonly resource?: {
     readonly id?: string;
     readonly attributes?: Readonly<Record<string, unknown>>;
   };
+}
+
+export interface AccessCheckInput extends AccessQuestion {
+  readonly accessToken: string;
+}
+
+/** A Tenant Admin's test: the question asked for one of the Tenant's Memberships in one Application. */
+export interface TestAccessInput extends AccessQuestion {
+  readonly membershipId: string;
+  readonly applicationId: string;
 }
 
 /** The User the check is about, from a verified access token that carries an Active Tenant. */
@@ -68,17 +78,36 @@ export class AccessCheckService {
     return this.scoped.inTenant(asker.tenantId, async (tx) => {
       // A client error, not a deny: the Application asked about something it never declared.
       (await loadSchemaIndex(tx, application.id)).assertKnown(input.resourceType, input.action);
-      const result = await this.answer(tx, application, asker, input);
+      const result = await this.answer(tx, application.id, asker, input);
       await this.record(tx, application, asker, input, result);
       return result;
     });
   }
 
+  /**
+   * A Tenant Admin's test of what an Access Check would answer for one of the Tenant's Memberships:
+   * the same gates and engine, without the Application's client secret. It isn't an Access Check, so
+   * it isn't written to the Audit Log and never counts towards denied-Access-Check alerts.
+   */
+  async test(tenantId: string, input: TestAccessInput): Promise<AccessCheckResult> {
+    return this.scoped.inTenant(tenantId, async (tx) => {
+      const membership = await tx.membership.findFirst({
+        where: { id: input.membershipId, tenantId },
+        select: { id: true, userId: true },
+      });
+      if (!membership) throw new NotFoundException('Membership not found');
+      const application = await tx.application.findUnique({ where: { id: input.applicationId }, select: { id: true } });
+      if (!application) throw new NotFoundException('Application not found');
+      (await loadSchemaIndex(tx, application.id)).assertKnown(input.resourceType, input.action);
+      return this.answer(tx, application.id, { userId: membership.userId, membershipId: membership.id, tenantId }, input);
+    });
+  }
+
   private async answer(
     tx: ScopedTransaction,
-    application: ApplicationSummary,
+    applicationId: string,
     asker: EngineContext,
-    input: AccessCheckInput,
+    input: AccessQuestion,
   ): Promise<AccessCheckResult> {
     // One instant for the whole check: a Temporary Role Assignment counts only while it is before it.
     const now = new Date();
@@ -90,7 +119,7 @@ export class AccessCheckService {
     if (tenant.suspendedAt !== null) return denied('tenant-suspended');
 
     const enablement = await tx.enablement.findUnique({
-      where: { tenantId_applicationId: { tenantId, applicationId: application.id } },
+      where: { tenantId_applicationId: { tenantId, applicationId } },
       select: { disabledAt: true },
     });
     if (!enablement || enablement.disabledAt !== null) return denied('application-not-enabled');
@@ -99,7 +128,7 @@ export class AccessCheckService {
     if (!membership) return denied('no-membership');
 
     const assignments = await tx.roleAssignment.findMany({
-      where: { tenantId, membershipId, applicationId: application.id, ...activeAssignmentWhere(now) },
+      where: { tenantId, membershipId, applicationId, ...activeAssignmentWhere(now) },
       select: {
         role: {
           select: {

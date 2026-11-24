@@ -62,10 +62,16 @@
     access.href = '/role-assignments.html?membership=' + encodeURIComponent(member.membershipId);
     access.textContent = 'Roles';
     access.setAttribute('aria-label', 'Roles and effective Permissions of ' + name);
+    const test = document.createElement('a');
+    test.className = 'button ghost small';
+    test.href = '/test-access.html?membership=' + encodeURIComponent(member.membershipId);
+    test.textContent = 'Test access';
+    test.setAttribute('aria-label', 'Test the access of ' + name);
     const actions = document.createElement('span');
     actions.className = 'actions';
     actions.append(
       access,
+      test,
       actionButton(
         member.isTenantAdmin ? 'Remove admin' : 'Make admin',
         'ghost',
