@@ -4,7 +4,7 @@ import type { AuditEventType } from '../audit/audit-event-types';
 import { AuditLog } from '../audit/audit-log.service';
 import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { PrismaService } from '../prisma/prisma.service';
-import { type ScopedTransaction, setTenantContext } from '../prisma/scoped-prisma';
+import { ScopedPrisma } from '../prisma/scoped-prisma';
 
 /** A Tenant as the Platform Admin console lists it: its name, counts and status, never its data. */
 export interface PlatformTenantSummary {
@@ -36,25 +36,25 @@ function toSummary(tenant: Tenant, counts: TenantCounts): PlatformTenantSummary 
 
 /**
  * The Tenant list and suspension, for Platform Admins. The tenants table is platform-level. The only
- * Tenant-owned reads are the counts, each made inside that Tenant's own RLS context, and only the
- * numbers leave this service.
+ * Tenant-owned reads are the counts, each made through ScopedPrisma.inTenant() in that Tenant's own
+ * RLS context, and only the numbers leave this service.
  */
 @Injectable()
 export class PlatformTenantsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly scoped: ScopedPrisma,
     private readonly audit: AuditLog,
   ) {}
 
   /** Newest first. */
   async list(query: PageQuery): Promise<Page<PlatformTenantSummary>> {
     const window = pageWindow(query, 'desc');
-    return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.tenant.findMany({ where: window.after, orderBy: window.orderBy, take: window.take });
-      const counts = new Map<string, TenantCounts>();
-      for (const row of rows.slice(0, window.limit)) counts.set(row.id, await countIn(tx, row.id));
-      return toPage(rows, window, (row) => toSummary(row, counts.get(row.id) ?? { membershipCount: 0, enabledApplicationCount: 0 }));
-    });
+    const rows = await this.prisma.tenant.findMany({ where: window.after, orderBy: window.orderBy, take: window.take });
+    const page = toPage(rows, window, (row) => row);
+    const items: PlatformTenantSummary[] = [];
+    for (const row of page.items) items.push(toSummary(row, await this.countsOf(row.id)));
+    return { items, nextCursor: page.nextCursor };
   }
 
   /**
@@ -70,19 +70,16 @@ export class PlatformTenantsService {
     return this.setSuspended(actorUserId, tenantId, false);
   }
 
-  private setSuspended(actorUserId: string, tenantId: string, suspend: boolean): Promise<PlatformTenantSummary> {
-    return this.prisma.$transaction(async (tx) => {
-      // Lock the row so two Platform Admins can't both suspend (or reactivate) and record it twice.
+  private async setSuspended(actorUserId: string, tenantId: string, suspend: boolean): Promise<PlatformTenantSummary> {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Lock the row so two Platform Admins can't both suspend (or reactivate) and record it twice,
+      // and so a concurrent switch or refresh (which reads it FOR SHARE) sees the outcome.
       await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE`;
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) throw new NotFoundException('Tenant not found');
       if (suspend === (tenant.suspendedAt !== null)) {
         throw new ConflictException(`Tenant "${tenant.name}" is ${suspend ? 'already suspended' : 'not suspended'}`);
       }
-      const updated = await tx.tenant.update({
-        where: { id: tenantId },
-        data: { suspendedAt: suspend ? new Date() : null },
-      });
       const eventType: AuditEventType = suspend ? 'tenant.suspended' : 'tenant.reactivated';
       await this.audit.recordIn(tx, {
         tenantId: null,
@@ -91,19 +88,16 @@ export class PlatformTenantsService {
         target: { type: 'tenant', id: tenantId },
         payload: { name: tenant.name },
       });
-      return toSummary(updated, await countIn(tx, tenantId));
+      return tx.tenant.update({ where: { id: tenantId }, data: { suspendedAt: suspend ? new Date() : null } });
     });
+    return toSummary(updated, await this.countsOf(tenantId));
   }
-}
 
-/**
- * Counts one Tenant's Memberships and enabled Applications inside its RLS context, then clears the
- * context so whatever the transaction runs next sees no Tenant.
- */
-async function countIn(tx: ScopedTransaction, tenantId: string): Promise<TenantCounts> {
-  await setTenantContext(tx, tenantId);
-  const membershipCount = await tx.membership.count({ where: { tenantId } });
-  const enabledApplicationCount = await tx.enablement.count({ where: { tenantId, disabledAt: null } });
-  await setTenantContext(tx, '');
-  return { membershipCount, enabledApplicationCount };
+  /** One Tenant's Memberships and enabled Applications, counted inside its own RLS context. */
+  private countsOf(tenantId: string): Promise<TenantCounts> {
+    return this.scoped.inTenant(tenantId, async (tx) => ({
+      membershipCount: await tx.membership.count({ where: { tenantId } }),
+      enabledApplicationCount: await tx.enablement.count({ where: { tenantId, disabledAt: null } }),
+    }));
+  }
 }

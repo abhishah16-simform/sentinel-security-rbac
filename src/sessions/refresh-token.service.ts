@@ -3,6 +3,7 @@ import type { Prisma, RefreshChain } from '@prisma/client';
 import type { AuditEventType } from '../audit/audit-event-types';
 import { type AuditEventInput, AuditLog, type AuditPayload } from '../audit/audit-log.service';
 import { generateOpaqueToken, hashOpaqueToken } from '../common/opaque-token';
+import { isTenantSuspended } from '../common/tenant-suspended';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ScopedTransaction } from '../prisma/scoped-prisma';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
@@ -14,12 +15,6 @@ function activeTenantOf(chain: RefreshChain): ActiveTenantRef | null {
   return chain.activeTenantId !== null && chain.activeMembershipId !== null
     ? { tenantId: chain.activeTenantId, membershipId: chain.activeMembershipId }
     : null;
-}
-
-/** Whether a Platform Admin has suspended the Tenant. The Tenant list is platform-level: no RLS. */
-async function isSuspended(tx: ScopedTransaction, tenantId: string): Promise<boolean> {
-  const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { suspendedAt: true } });
-  return tenant !== null && tenant.suspendedAt !== null;
 }
 
 /** An Audit Log entry about one login (refresh chain), acted on by its User. */
@@ -118,10 +113,10 @@ export class RefreshTokenService {
       }
       if (current.expiresAt <= now) return { kind: 'rejected' };
 
-      if (switchTo && (await isSuspended(tx, switchTo.tenantId))) return { kind: 'tenant-suspended' };
+      if (switchTo && (await isTenantSuspended(tx, switchTo.tenantId, { lock: true }))) return { kind: 'tenant-suspended' };
       // A login whose Active Tenant was suspended keeps going without it: no new token names that Tenant.
       const kept = activeTenantOf(chain);
-      const activeTenant = switchTo ?? (kept && !(await isSuspended(tx, kept.tenantId)) ? kept : null);
+      const activeTenant = switchTo ?? (kept && !(await isTenantSuspended(tx, kept.tenantId, { lock: true })) ? kept : null);
 
       await tx.refreshToken.update({ where: { id: current.id }, data: { usedAt: now } });
       const changed =
