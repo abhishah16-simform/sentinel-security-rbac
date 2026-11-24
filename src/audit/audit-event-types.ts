@@ -52,6 +52,9 @@ export const AUDIT_EVENT_TYPES = {
   'role.permission_removed': 'Removed Permission from Role',
   'role_assignment.created': 'Assigned Role',
   'role_assignment.revoked': 'Revoked Role Assignment',
+  /** Access Checks are written unchained (AuditLog.recordUnchainedIn). */
+  'access_check.allowed': 'Access Check allowed',
+  'access_check.denied': 'Access Check denied',
 } as const;
 
 export type AuditEventType = keyof typeof AUDIT_EVENT_TYPES;

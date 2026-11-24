@@ -43,6 +43,16 @@ export class SchemaIndex {
     return this.usage(resourceType, action) !== 'active';
   }
 
+  /**
+   * Throws a 400 unless the pair is in the Schema, Deprecated or not: an Access Check may still ask
+   * about a Deprecated entry, which existing Permissions can use.
+   */
+  assertKnown(resourceType: string, action: string): void {
+    if (this.usage(resourceType, action) === 'unknown') {
+      throw new BadRequestException(`"${action}" on "${resourceType}" is not in the Application Schema (names are case-sensitive)`);
+    }
+  }
+
   /** Throws unless a new Permission may use this pair: in the Schema and not Deprecated. */
   assertUsable(resourceType: string, action: string): void {
     const usage = this.usage(resourceType, action);

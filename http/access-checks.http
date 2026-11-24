@@ -1,0 +1,159 @@
+# Access Checks (ticket 11): the whole flow, from registering an Application to asking Sentinel
+# whether a User may do something. Works with the VS Code REST Client or JetBrains HTTP Client.
+#
+# You need:
+#   - a Platform Admin access token (see http/platform-applications.http)
+#   - a User with a verified email who has created a Tenant and switched into it, so their access
+#     token carries tid and mid (see http/auth.http and http/tenants.http). They are its Tenant Admin.
+
+@baseUrl = http://localhost:9800
+@platformToken = paste-platform-admin-access-token
+@tenantToken = paste-tenant-admin-access-token-with-active-tenant
+@userId = paste-the-tenant-admins-user-id
+@membershipId = paste-the-tenant-admins-membership-id
+@applicationId = paste-application-id
+@clientId = paste-client-id
+@clientSecret = paste-client-secret
+@clerkRoleId = paste-clerk-role-id
+@noExportRoleId = paste-no-export-role-id
+
+### 1. Platform Admin: register the Application. Copy application.id, application.clientId and
+###    clientSecret (shown this once) into the variables above.
+POST {{baseUrl}}/v1/platform/applications
+Authorization: Bearer {{platformToken}}
+Content-Type: application/json
+
+{ "name": "Billing", "allowedOrigins": ["http://localhost:5173"] }
+
+### 2. Platform Admin: declare its Application Schema
+POST {{baseUrl}}/v1/platform/applications/{{applicationId}}/resource-types
+Authorization: Bearer {{platformToken}}
+Content-Type: application/json
+
+{ "name": "Invoice", "actions": ["read", "approve", "export"] }
+
+### 3. Before the Tenant enables it, every Access Check is denied: application-not-enabled
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "read", "resourceType": "Invoice" }
+
+### 4. Tenant Admin: enable the Application
+POST {{baseUrl}}/v1/tenants/current/applications/{{applicationId}}/enable
+Authorization: Bearer {{tenantToken}}
+
+### 5. Tenant Admin: a Role that reads its own invoices and approves and exports any. Copy its id
+###    into @clerkRoleId.
+POST {{baseUrl}}/v1/tenants/current/roles
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{
+  "applicationId": "{{applicationId}}",
+  "name": "Clerk",
+  "permissions": [
+    { "resourceType": "Invoice", "action": "read", "conditions": { "ownerId": "${user.id}" } },
+    { "resourceType": "Invoice", "action": "approve" },
+    { "resourceType": "Invoice", "action": "export" }
+  ]
+}
+
+### 6. Tenant Admin: a Role with Deny Rules: never export, never approve over 1000. Copy its id
+###    into @noExportRoleId.
+POST {{baseUrl}}/v1/tenants/current/roles
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{
+  "applicationId": "{{applicationId}}",
+  "name": "No export",
+  "permissions": [
+    { "resourceType": "Invoice", "action": "export", "inverted": true },
+    { "resourceType": "Invoice", "action": "approve", "inverted": true, "conditions": { "amount": { "$gt": 1000 } } }
+  ]
+}
+
+### 7. With no Role Assigned yet: no-matching-permission
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "approve", "resourceType": "Invoice" }
+
+### 8. Tenant Admin: assign Clerk to the Membership
+POST {{baseUrl}}/v1/tenants/current/role-assignments
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "roleId": "{{clerkRoleId}}" }
+
+### 9. allowed: matched-allow, with the Role and Permission that decided it
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "approve", "resourceType": "Invoice", "resource": { "id": "inv-1001" } }
+
+### 10. A Condition with a placeholder: allowed for the User's own invoice...
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "read", "resourceType": "Invoice", "resource": { "id": "inv-1002", "attributes": { "ownerId": "{{userId}}" } } }
+
+### 11. ...and no-matching-permission for someone else's
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "read", "resourceType": "Invoice", "resource": { "id": "inv-1003", "attributes": { "ownerId": "someone-else" } } }
+
+### 12. Tenant Admin: a Temporary Role Assignment of the Deny Rules. Set expiresAt a minute or two ahead.
+POST {{baseUrl}}/v1/tenants/current/role-assignments
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "roleId": "{{noExportRoleId}}", "expiresAt": "2026-11-24T12:00:00Z" }
+
+### 13. Deny wins over allow: matched-deny with the No export Role's Permission.
+###     Run again after expiresAt: matched-allow, at exactly that time, with nothing having to run.
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "export", "resourceType": "Invoice" }
+
+### 14. A conditional Deny Rule: approving 5000 is matched-deny, approving 500 is matched-allow
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "approve", "resourceType": "Invoice", "resource": { "attributes": { "amount": 5000 } } }
+
+### 15. 400, not a deny: an Action outside the Application Schema (names are case-sensitive, so
+###     "invoice" would be a 400 too)
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "delete", "resourceType": "Invoice" }
+
+### 16. 401: wrong client secret (or an invalid or expired access token in the body)
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:wrong-secret
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "read", "resourceType": "Invoice" }
+
+### 17. Tenant Admin: disable the Application; checks are denied (application-not-enabled) until it
+###     is enabled again, and its Roles and assignments are kept.
+POST {{baseUrl}}/v1/tenants/current/applications/{{applicationId}}/disable
+Authorization: Bearer {{tenantToken}}
+
+### Other denials: tenant-suspended once a Platform Admin suspends the Tenant (ticket 12), and
+### no-membership once the User's Membership is removed, even while their access token is still valid.
+
+### 18. Every Access Check is in the Tenant's Audit Log, unchained (seq null)
+GET {{baseUrl}}/v1/audit-events?eventType=access_check.denied
+Authorization: Bearer {{tenantToken}}

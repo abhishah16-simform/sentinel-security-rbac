@@ -9,7 +9,7 @@ import { entryHash, GENESIS_HASH, type HashedEntry, PLATFORM_CHAIN } from './aud
 export type AuditPayload = Readonly<Record<string, string | number | boolean | null>>;
 
 export interface AuditTarget {
-  readonly type: 'user' | 'tenant' | 'session' | 'invitation' | 'application' | 'role_template' | 'role';
+  readonly type: 'user' | 'tenant' | 'session' | 'invitation' | 'application' | 'role_template' | 'role' | 'resource';
   readonly id: string;
 }
 
@@ -47,9 +47,9 @@ interface TenantSetting {
 }
 
 /**
- * The one writer for the Audit Log. Every entry joins a hash chain: its Tenant's, or the platform
- * chain when it has no Tenant. Writes to one chain are serialized by locking its head row until
- * the transaction ends.
+ * The one writer for the Audit Log. Admin and authentication entries join a hash chain: their
+ * Tenant's, or the platform chain when they have no Tenant. Writes to one chain are serialized by
+ * locking its head row until the transaction ends. Access Checks are written unchained.
  */
 @Injectable()
 export class AuditLog {
@@ -95,5 +95,24 @@ export class AuditLog {
     await tx.auditChainHead.update({ where: { chain }, data: { seq: entry.seq, hash } });
 
     await setTenantContext(tx, previous?.value ?? '');
+  }
+
+  /**
+   * Writes an entry that joins no hash chain (an Access Check): no sequence number or hashes, and no
+   * chain-head lock, so concurrent writers don't queue behind each other or behind admin changes.
+   * The transaction must already be in the entry's Tenant context; RLS rejects the insert otherwise.
+   */
+  async recordUnchainedIn(tx: ScopedTransaction, event: AuditEventInput & { readonly tenantId: string }): Promise<void> {
+    await tx.auditEvent.create({
+      data: {
+        tenantId: event.tenantId,
+        eventType: event.eventType,
+        actorUserId: event.actorUserId,
+        targetType: event.target?.type ?? null,
+        targetId: event.target?.id ?? null,
+        applicationId: event.applicationId ?? null,
+        payload: event.payload ?? {},
+      },
+    });
   }
 }
