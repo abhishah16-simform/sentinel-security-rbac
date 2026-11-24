@@ -1794,7 +1794,7 @@ button.link:hover {
   margin: 0 0 12px;
 }
 
-.answer-rule {
+.answer-match {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 8px 16px;
@@ -1802,11 +1802,11 @@ button.link:hover {
   font-size: 0.875rem;
 }
 
-.answer-rule dt {
+.answer-match dt {
   color: var(--muted);
 }
 
-.answer-rule dd {
+.answer-match dd {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;

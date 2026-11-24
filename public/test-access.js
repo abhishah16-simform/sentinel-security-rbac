@@ -113,12 +113,11 @@
     return value;
   }
 
-  async function showRule(result) {
-    const rule = document.getElementById('answer-rule');
-    if (!result.roleId) {
-      rule.hidden = true;
-      return;
-    }
+  // The Role and Permission that settled the answer, read from the Tenant's Roles.
+  async function showMatch(result) {
+    const match = document.getElementById('answer-match');
+    match.hidden = true;
+    if (!result.roleId) return;
     const role = await Sentinel.api('/v1/tenants/current/roles/' + encodeURIComponent(result.roleId));
     const permission = role.permissions.find(function (entry) {
       return entry.id === result.permissionId;
@@ -136,7 +135,7 @@
     }
     document.getElementById('answer-condition').textContent =
       permission && permission.conditions ? JSON.stringify(permission.conditions) : 'Every resource';
-    rule.hidden = false;
+    match.hidden = false;
   }
 
   async function showAnswer(question, result) {
@@ -152,8 +151,13 @@
       .replaceChildren(badge(result.allowed ? 'Allowed' : 'Denied', result.allowed ? 'ok' : 'bad'));
     document.getElementById('answer-reason').textContent =
       (REASONS[result.reason] || result.reason) + ' (reason: ' + result.reason + ')';
-    await showRule(result);
     document.getElementById('answer').hidden = false;
+    // The answer stands on its own; the Role's details are extra, so failing to load them is only a toast.
+    try {
+      await showMatch(result);
+    } catch (error) {
+      showMessage(message, 'Could not load Role ' + result.roleId + ': ' + error.message, 'error');
+    }
   }
 
   memberSelect.addEventListener('change', showPlaceholders);
@@ -161,6 +165,8 @@
   resourceTypeSelect.addEventListener('change', fillActions);
 
   handleForm(form, message, async function (data) {
+    // Never leave the previous answer next to a new question that fails.
+    document.getElementById('answer').hidden = true;
     const attributes = parseAttributes(String(data.get('attributes') || ''));
     const resourceId = String(data.get('resourceId') || '').trim();
     const question = {
@@ -200,8 +206,11 @@
       block('Tenant Admins only', 'Only Tenant Admins can test access in ' + tenant.tenantName + '.', false);
       return;
     }
-    const lists = await Promise.all([all('/v1/tenants/current/memberships'), all('/v1/tenants/current/applications')]);
-    members = lists[0];
+    const [memberships, applications] = await Promise.all([
+      all('/v1/tenants/current/memberships'),
+      all('/v1/tenants/current/applications'),
+    ]);
+    members = memberships;
     members.forEach(function (member) {
       const label = memberName(member) + (member.userId === me.id ? ' (you)' : '') + ' · ' + member.email;
       memberSelect.append(option(member.membershipId, label));
@@ -209,7 +218,7 @@
 
     // Every Application whose Schema has Resource Types; disabled ones stay, so their denial can be seen.
     const details = await Promise.all(
-      lists[1].map(function (application) {
+      applications.map(function (application) {
         return Sentinel.api('/v1/tenants/current/applications/' + encodeURIComponent(application.id));
       }),
     );
