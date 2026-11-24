@@ -1,4 +1,5 @@
 import { createMongoAbility, type MongoAbility, type MongoQuery, type RawRuleOf } from '@casl/ability';
+import { placeholderMap, type PlaceholderValues } from '../access-rules/conditions';
 
 /** One Permission the Membership holds through an active Role Assignment, as stored (ADR 0001). */
 export interface EnginePermission {
@@ -12,12 +13,8 @@ export interface EnginePermission {
   readonly conditions: unknown;
 }
 
-/** Who is asking: the values the Condition placeholders stand for. */
-export interface EngineContext {
-  readonly userId: string;
-  readonly membershipId: string;
-  readonly tenantId: string;
-}
+/** Who is asking: the User, their Membership and its Tenant, which Condition placeholders stand for. */
+export type EngineContext = PlaceholderValues;
 
 /** What is being asked. */
 export interface EngineRequest {
@@ -27,7 +24,8 @@ export interface EngineRequest {
   readonly attributes: Readonly<Record<string, unknown>>;
 }
 
-export type EngineDecision =
+/** The engine's answer, with the Permission that settled it when one matched. */
+export type EngineVerdict =
   | {
       readonly allowed: boolean;
       readonly reason: 'matched-allow' | 'matched-deny';
@@ -78,12 +76,8 @@ export function evaluateAccess(
   permissions: readonly EnginePermission[],
   context: EngineContext,
   request: EngineRequest,
-): EngineDecision {
-  const values = new Map<string, string>([
-    ['${user.id}', context.userId],
-    ['${membership.id}', context.membershipId],
-    ['${tenant.id}', context.tenantId],
-  ]);
+): EngineVerdict {
+  const values = placeholderMap(context);
   const relevant = permissions.filter(
     (permission) => permission.action === request.action && permission.resourceType === request.resourceType,
   );

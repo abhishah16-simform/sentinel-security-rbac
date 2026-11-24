@@ -5,12 +5,12 @@ import type { ApplicationSummary } from '../applications/applications.service';
 import { loadSchemaIndex } from '../applications/schema-index';
 import { AuditLog } from '../audit/audit-log.service';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
-import { type EngineDecision, type EnginePermission, evaluateAccess } from './access-check-engine';
+import { type EngineContext, type EnginePermission, type EngineVerdict, evaluateAccess } from './access-check-engine';
 
 /** Why an Access Check was denied before the engine ran. */
 export type GateReason = 'tenant-suspended' | 'application-not-enabled' | 'no-membership';
 
-export type AccessCheckReason = EngineDecision['reason'] | GateReason;
+export type AccessCheckReason = EngineVerdict['reason'] | GateReason;
 
 /** The answer an Application gets. roleId and permissionId name the Permission that decided it. */
 export interface AccessCheckResult {
@@ -31,13 +31,7 @@ export interface AccessCheckInput {
 }
 
 /** The User the check is about, from a verified access token that carries an Active Tenant. */
-interface CheckSubject {
-  readonly userId: string;
-  readonly tenantId: string;
-  readonly membershipId: string;
-}
-
-function subjectOf(claims: AccessTokenClaims): CheckSubject {
+function askerOf(claims: AccessTokenClaims): EngineContext {
   if (claims.tid === undefined || claims.mid === undefined) {
     throw new BadRequestException('The access token has no Active Tenant; the User must choose one first');
   }
@@ -48,9 +42,9 @@ function denied(reason: GateReason): AccessCheckResult {
   return { allowed: false, reason };
 }
 
-function toResult(decision: EngineDecision): AccessCheckResult {
-  if (decision.reason === 'no-matching-permission') return { allowed: false, reason: decision.reason };
-  return { allowed: decision.allowed, reason: decision.reason, roleId: decision.roleId, permissionId: decision.permissionId };
+function toResult(verdict: EngineVerdict): AccessCheckResult {
+  if (verdict.reason === 'no-matching-permission') return { allowed: false, reason: verdict.reason };
+  return { allowed: verdict.allowed, reason: verdict.reason, roleId: verdict.roleId, permissionId: verdict.permissionId };
 }
 
 /**
@@ -70,27 +64,28 @@ export class AccessCheckService {
   ) {}
 
   async check(application: ApplicationSummary, input: AccessCheckInput): Promise<AccessCheckResult> {
-    const subject = subjectOf(await this.accessTokens.verify(input.accessToken));
-    return this.scoped.inTenant(subject.tenantId, async (tx) => {
+    const asker = askerOf(await this.accessTokens.verify(input.accessToken));
+    return this.scoped.inTenant(asker.tenantId, async (tx) => {
       // A client error, not a deny: the Application asked about something it never declared.
       (await loadSchemaIndex(tx, application.id)).assertKnown(input.resourceType, input.action);
-      const result = await this.decide(tx, application, subject, input);
-      await this.record(tx, application, subject, input, result);
+      const result = await this.answer(tx, application, asker, input);
+      await this.record(tx, application, asker, input, result);
       return result;
     });
   }
 
-  private async decide(
+  private async answer(
     tx: ScopedTransaction,
     application: ApplicationSummary,
-    subject: CheckSubject,
+    asker: EngineContext,
     input: AccessCheckInput,
   ): Promise<AccessCheckResult> {
     // One instant for the whole check: a Temporary Role Assignment counts only while it is before it.
     const now = new Date();
-    const { tenantId, membershipId, userId } = subject;
+    const { tenantId, membershipId, userId } = asker;
 
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { suspendedAt: true } });
+    // Tenants are never deleted, but a token naming one that doesn't exist has no Membership in it.
     if (!tenant) return denied('no-membership');
     if (tenant.suspendedAt !== null) return denied('tenant-suspended');
 
@@ -121,12 +116,12 @@ export class AccessCheckService {
       role ? role.permissions.map((permission) => ({ ...permission, roleId: role.id })) : [],
     );
 
-    const decision = evaluateAccess(
+    const verdict = evaluateAccess(
       permissions,
-      { userId, membershipId, tenantId },
+      asker,
       { action: input.action, resourceType: input.resourceType, attributes: input.resource?.attributes ?? {} },
     );
-    return toResult(decision);
+    return toResult(verdict);
   }
 
   /**
@@ -136,19 +131,19 @@ export class AccessCheckService {
   private record(
     tx: ScopedTransaction,
     application: ApplicationSummary,
-    subject: CheckSubject,
+    asker: EngineContext,
     input: AccessCheckInput,
     result: AccessCheckResult,
   ): Promise<void> {
     const resourceId = input.resource?.id ?? null;
     return this.audit.recordUnchainedIn(tx, {
-      tenantId: subject.tenantId,
+      tenantId: asker.tenantId,
       eventType: result.allowed ? 'access_check.allowed' : 'access_check.denied',
-      actorUserId: subject.userId,
+      actorUserId: asker.userId,
       target: resourceId === null ? undefined : { type: 'resource', id: resourceId },
       applicationId: application.id,
       payload: {
-        membershipId: subject.membershipId,
+        membershipId: asker.membershipId,
         application: application.name,
         action: input.action,
         resourceType: input.resourceType,

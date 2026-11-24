@@ -2,11 +2,30 @@ import { mongoQueryMatcher } from '@casl/ability';
 import { BadRequestException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+/** What a Condition's placeholders stand for in one Access Check. */
+export interface PlaceholderValues {
+  readonly userId: string;
+  readonly membershipId: string;
+  readonly tenantId: string;
+}
+
+/** Each placeholder and the value it stands for. */
+const PLACEHOLDER_FIELDS = {
+  '${user.id}': 'userId',
+  '${membership.id}': 'membershipId',
+  '${tenant.id}': 'tenantId',
+} as const satisfies Record<string, keyof PlaceholderValues>;
+
 /**
  * The only placeholders a Condition may use. Each must be a whole string value; the Access Check
  * fills them in before it builds the CASL ability, never by substituting into evaluated code.
  */
-export const CONDITION_PLACEHOLDERS: readonly string[] = ['${user.id}', '${membership.id}', '${tenant.id}'];
+export const CONDITION_PLACEHOLDERS: readonly string[] = Object.keys(PLACEHOLDER_FIELDS);
+
+/** Each placeholder mapped to its value for one Access Check. */
+export function placeholderMap(values: PlaceholderValues): ReadonlyMap<string, string> {
+  return new Map(Object.entries(PLACEHOLDER_FIELDS).map(([placeholder, field]) => [placeholder, values[field]]));
+}
 
 /** A stored Condition is at most this long as JSON. */
 export const MAX_CONDITION_LENGTH = 4096;

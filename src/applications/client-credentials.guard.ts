@@ -11,6 +11,8 @@ interface ClientCredentials {
   readonly clientSecret: string;
 }
 
+const INVALID_CLIENT = 'Invalid client credentials';
+
 /** Longer than any client ID or secret Sentinel issues; anything bigger isn't worth hashing. */
 const MAX_CREDENTIAL_LENGTH = 256;
 
@@ -50,7 +52,7 @@ export class ClientCredentialsGuard implements CanActivate {
       : null;
     if (!application) {
       http.getResponse<Response>().setHeader('WWW-Authenticate', 'Basic realm="sentinel", charset="UTF-8"');
-      throw new UnauthorizedException('Invalid client credentials');
+      throw new UnauthorizedException(INVALID_CLIENT);
     }
     req.application = application;
     return true;
@@ -60,6 +62,6 @@ export class ClientCredentialsGuard implements CanActivate {
 /** The Application whose credentials authenticated the request. Use only behind ClientCredentialsGuard. */
 export const CurrentApplication = createParamDecorator((_data: unknown, context: ExecutionContext): ApplicationSummary => {
   const application = context.switchToHttp().getRequest<ClientRequest>().application;
-  if (!application) throw new UnauthorizedException('Invalid client credentials');
+  if (!application) throw new UnauthorizedException(INVALID_CLIENT);
   return application;
 });
