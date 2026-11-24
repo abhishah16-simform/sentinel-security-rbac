@@ -1,11 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { AccessCheckResult, GateReason } from '../access-check/access-check.service';
-import { AccessCheckService } from '../access-check/access-check.service';
+import { type ActionAnswer, AccessCheckService, type GateReason } from '../access-check/access-check.service';
 import { activeAssignmentWhere } from '../access-rules/role-assignment-ending';
 import type { ApplicationSummary } from '../applications/applications.service';
 import { loadSchemaIndex, type SchemaAction } from '../applications/schema-index';
-import { AuditLog } from '../audit/audit-log.service';
+import { canonicalJson } from '../audit/audit-hash';
+import { AuditLog, type AuditPayload } from '../audit/audit-log.service';
 import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { isUniqueConstraintError } from '../common/prisma-errors';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
@@ -41,11 +41,6 @@ export interface ReportMember {
   readonly email: string;
   readonly firstName: string;
   readonly lastName: string;
-}
-
-/** One Action's Access Check answer for one Membership. */
-export interface ActionAnswer extends AccessCheckResult {
-  readonly action: string;
 }
 
 export interface ResourceAccessRow {
@@ -86,10 +81,13 @@ function toView(row: ResourceRow): RegisteredResourceView {
   };
 }
 
-/** Top-level attribute names whose values differ, for the audit entry (never the values themselves). */
+/**
+ * Top-level attribute names whose values differ, for the audit entry (never the values themselves).
+ * Compared as canonical JSON: jsonb reorders object keys, so a resent nested object must still match.
+ */
 function changedKeys(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key])).sort();
+  return [...keys].filter((key) => canonicalJson(before[key] ?? null) !== canonicalJson(after[key] ?? null)).sort();
 }
 
 /**
@@ -215,7 +213,7 @@ export class RegisteredResourcesService {
     eventType: 'registered_resource.created' | 'registered_resource.updated' | 'registered_resource.deleted',
     application: ApplicationSummary,
     row: ResourceRow,
-    extra: { readonly changedAttributes?: string },
+    payload: AuditPayload,
   ): Promise<void> {
     return this.audit.recordIn(tx, {
       tenantId: row.tenantId,
@@ -228,7 +226,7 @@ export class RegisteredResourcesService {
         application: application.name,
         resourceType: row.resourceType,
         resourceId: row.resourceId,
-        ...extra,
+        ...payload,
       },
     });
   }
@@ -269,7 +267,7 @@ export class RegisteredResourcesService {
         take: window.take,
       });
       const shown = memberships.slice(0, window.limit);
-      const { deniedBecause, answers } = await this.accessChecks.answerMany(
+      const { deniedBecause, answers } = await this.accessChecks.answerForMemberships(
         tx,
         now,
         tenantId,
@@ -280,7 +278,8 @@ export class RegisteredResourcesService {
 
       const roleIds = new Set<string>();
       const page = toPage(memberships, window, (membership): ResourceAccessRow => {
-        const results = answers.get(membership.id) ?? [];
+        const memberAnswers = answers.get(membership.id) ?? [];
+        for (const answer of memberAnswers) if (answer.roleId) roleIds.add(answer.roleId);
         return {
           member: {
             membershipId: membership.id,
@@ -289,11 +288,7 @@ export class RegisteredResourcesService {
             firstName: membership.user.firstName,
             lastName: membership.user.lastName,
           },
-          answers: actions.map((action, index): ActionAnswer => {
-            const result = results[index] ?? { allowed: false, reason: 'no-matching-permission' };
-            if (result.roleId) roleIds.add(result.roleId);
-            return { action: action.name, ...result };
-          }),
+          answers: memberAnswers,
         };
       });
       const roles = await tx.role.findMany({

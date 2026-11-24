@@ -90,18 +90,18 @@
     show(await Sentinel.api(query(null)), false);
   }
 
-  function refreshOrShow() {
+  function refreshOrReport() {
     refresh().catch(function (error) {
       showMessage(document.getElementById('message'), error.message, 'error');
     });
   }
 
-  filterApplication.addEventListener('change', refreshOrShow);
+  filterApplication.addEventListener('change', refreshOrReport);
   filters.addEventListener('submit', function (event) {
     event.preventDefault();
-    refreshOrShow();
+    refreshOrReport();
   });
-  filterResourceId.addEventListener('change', refreshOrShow);
+  filterResourceId.addEventListener('change', refreshOrReport);
   more.addEventListener('click', async function () {
     more.disabled = true;
     try {

@@ -57,12 +57,24 @@ function toResult(verdict: EngineVerdict): AccessCheckResult {
   return { allowed: verdict.allowed, reason: verdict.reason, roleId: verdict.roleId, permissionId: verdict.permissionId };
 }
 
-/** What an Access Check would answer for many Memberships: why all are denied, if one gate does, and each answer. */
-export interface ManyAnswers {
+/** Several Actions asked about one resource of one Resource Type, with its attributes. */
+export interface ResourceQuestion {
+  readonly resourceType: string;
+  readonly actions: readonly string[];
+  readonly attributes: Readonly<Record<string, unknown>>;
+}
+
+/** One Action's Access Check answer. */
+export interface ActionAnswer extends AccessCheckResult {
+  readonly action: string;
+}
+
+/** Access Check answers for several Memberships about one resource. */
+export interface MembershipAnswers {
   /** The Tenant or Enablement gate that denies every check, or null. */
   readonly deniedBecause: GateReason | null;
-  /** Each Membership's answers, keyed by membershipId, in the order of the Actions asked. */
-  readonly answers: ReadonlyMap<string, readonly AccessCheckResult[]>;
+  /** Each Membership's answers, keyed by membershipId, one per Action asked, in order. */
+  readonly answers: ReadonlyMap<string, readonly ActionAnswer[]>;
 }
 
 /**
@@ -117,20 +129,16 @@ export class AccessCheckService {
    * Enablement and the active Permissions for all of them. The caller passes Memberships it has just
    * read in the same transaction, so the no-membership gate isn't checked again.
    */
-  async answerMany(
+  async answerForMemberships(
     tx: ScopedTransaction,
     now: Date,
     tenantId: string,
     applicationId: string,
     askers: readonly EngineContext[],
-    question: {
-      readonly resourceType: string;
-      readonly actions: readonly string[];
-      readonly attributes: Readonly<Record<string, unknown>>;
-    },
-  ): Promise<ManyAnswers> {
-    const answers = new Map<string, readonly AccessCheckResult[]>();
-    const deniedBecause = await this.gate(tx, tenantId, applicationId);
+    question: ResourceQuestion,
+  ): Promise<MembershipAnswers> {
+    const answers = new Map<string, readonly ActionAnswer[]>();
+    const deniedBecause = await this.gateReason(tx, tenantId, applicationId);
     const permissions = deniedBecause
       ? new Map<string, EnginePermission[]>()
       : await this.activePermissions(tx, now, tenantId, applicationId, askers.map((asker) => asker.membershipId), {
@@ -141,11 +149,12 @@ export class AccessCheckService {
       const held = permissions.get(asker.membershipId) ?? [];
       answers.set(
         asker.membershipId,
-        question.actions.map((action) =>
-          deniedBecause
+        question.actions.map((action) => ({
+          action,
+          ...(deniedBecause
             ? denied(deniedBecause)
-            : toResult(evaluateAccess(held, asker, { action, resourceType: question.resourceType, attributes: question.attributes })),
-        ),
+            : toResult(evaluateAccess(held, asker, { action, resourceType: question.resourceType, attributes: question.attributes }))),
+        })),
       );
     }
     return { deniedBecause, answers };
@@ -161,7 +170,7 @@ export class AccessCheckService {
     const now = new Date();
     const { tenantId, membershipId, userId } = asker;
 
-    const gate = await this.gate(tx, tenantId, applicationId);
+    const gate = await this.gateReason(tx, tenantId, applicationId);
     if (gate) return denied(gate);
 
     const membership = await tx.membership.findFirst({ where: { id: membershipId, tenantId, userId }, select: { id: true } });
@@ -180,7 +189,7 @@ export class AccessCheckService {
   }
 
   /** The Tenant and Enablement gates, in that order: why every check would be denied, or null. */
-  private async gate(tx: ScopedTransaction, tenantId: string, applicationId: string): Promise<GateReason | null> {
+  private async gateReason(tx: ScopedTransaction, tenantId: string, applicationId: string): Promise<GateReason | null> {
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { suspendedAt: true } });
     // Tenants are never deleted, but a token naming one that doesn't exist has no Membership in it.
     if (!tenant) return 'no-membership';
@@ -204,7 +213,7 @@ export class AccessCheckService {
     tenantId: string,
     applicationId: string,
     membershipIds: readonly string[],
-    on: { readonly resourceType: string; readonly actions: readonly string[] },
+    on: Pick<ResourceQuestion, 'resourceType' | 'actions'>,
   ): Promise<ReadonlyMap<string, EnginePermission[]>> {
     const assignments = await tx.roleAssignment.findMany({
       where: { tenantId, membershipId: { in: [...membershipIds] }, applicationId, ...activeAssignmentWhere(now) },
