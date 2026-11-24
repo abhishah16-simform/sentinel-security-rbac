@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registered Resource · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><a href="/registered-resources.html">Registered Resources</a><span class="sep">/</span><span aria-current="page" id="crumb-resource">Resource</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1 id="resource-name">Registered Resource</h1>
+              <p class="subtitle" id="resource-subtitle"></p>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/tenants.html" id="blocked-link" hidden>Choose a Tenant</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="details-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="details-title">Attributes</h2>
+                  <p id="details-text">As the Application last sent them. Conditions are matched against these.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="list"></i></span>
+              </div>
+              <div class="answer-body">
+                <dl class="answer-match">
+                  <dt>Application</dt>
+                  <dd id="detail-application"></dd>
+                  <dt>Resource Type</dt>
+                  <dd id="detail-resource-type"></dd>
+                  <dt>Attributes</dt>
+                  <dd><code class="mono condition" id="detail-attributes"></code></dd>
+                  <dt>Registered</dt>
+                  <dd id="detail-created"></dd>
+                  <dt>Updated</dt>
+                  <dd id="detail-updated"></dd>
+                </dl>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="access-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="access-title">Who can access it</h2>
+                  <p id="access-text"></p>
+                </div>
+                <span class="icon-tile"><i data-icon="shieldCheck"></i></span>
+              </div>
+              <p class="callout" id="denied-callout" hidden><i data-icon="alert"></i><span id="denied-text"></span></p>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr id="access-head"></tr>
+                  </thead>
+                  <tbody id="rows"></tbody>
+                </table>
+              </div>
+              <div id="empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="users"></i></span>
+                <strong>Nobody has a Role in this Application</strong>
+                <span>Every Access Check about this resource is denied until a member is given one.</span>
+                <a class="button secondary" href="/role-assignments.html">Role assignments</a>
+              </div>
+              <div class="card-footer" id="more-footer" hidden>
+                <span class="hint">More members to show</span>
+                <button type="button" class="secondary small" id="more">Load more</button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/registered-resource.js"></script>
+  </body>
+</html>

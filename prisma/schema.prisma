@@ -161,14 +161,15 @@ model Tenant {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  memberships     Membership[]
-  invitations     Invitation[]
-  refreshChains   RefreshChain[]
-  auditEvents     AuditEvent[]
-  enablements     Enablement[]
-  roles           Role[]
-  permissions     Permission[]
-  roleAssignments RoleAssignment[]
+  memberships         Membership[]
+  invitations         Invitation[]
+  refreshChains       RefreshChain[]
+  auditEvents         AuditEvent[]
+  enablements         Enablement[]
+  roles               Role[]
+  permissions         Permission[]
+  roleAssignments     RoleAssignment[]
+  registeredResources RegisteredResource[]
 
   @@map("tenants")
 }
@@ -253,11 +254,12 @@ model Application {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  resourceTypes   ResourceType[]
-  roleTemplates   RoleTemplate[]
-  enablements     Enablement[]
-  roles           Role[]
-  roleAssignments RoleAssignment[]
+  resourceTypes       ResourceType[]
+  roleTemplates       RoleTemplate[]
+  enablements         Enablement[]
+  roles               Role[]
+  roleAssignments     RoleAssignment[]
+  registeredResources RegisteredResource[]
 
   @@map("applications")
 }
@@ -446,6 +448,30 @@ model RoleAssignment {
   @@index([membershipId])
   @@index([roleId])
   @@map("role_assignments")
+}
+
+/// Tenant-owned (RLS). A specific resource an Application has told Sentinel about, so the Tenant
+/// can see who has access to it. Identified by the Application's own ID within its Resource Type;
+/// written only by that Application, in a Tenant that has enabled it.
+model RegisteredResource {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  applicationId String   @db.Uuid
+  /// A Resource Type name in the Application Schema.
+  resourceType  String
+  /// The Application's own ID for the resource, as it sends in an Access Check's resource.id.
+  resourceId    String
+  /// The attributes Conditions are matched against, as the Application last sent them.
+  attributes    Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, applicationId, resourceType, resourceId])
+  @@index([tenantId, createdAt])
+  @@map("registered_resources")
 }
 
 // ---------------------------------------------------------------------------

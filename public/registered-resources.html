@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registered Resources · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><span aria-current="page">Registered Resources</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1>Registered Resources</h1>
+              <p class="subtitle">Specific resources your Applications have told Sentinel about. Open one to see who can access it.</p>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/tenants.html" id="blocked-link" hidden>Choose a Tenant</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="list-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="list-title">Resources</h2>
+                  <p>Newest first. Applications register, update and remove them through the API; they can't be changed here.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="list"></i></span>
+              </div>
+              <form id="filters" class="inline-form filters">
+                <label>
+                  Application
+                  <select name="applicationId" id="filter-application">
+                    <option value="">All Applications</option>
+                  </select>
+                </label>
+                <label>
+                  Resource ID (exact)
+                  <input name="resourceId" id="filter-resource-id" maxlength="256" placeholder="inv-1001" />
+                </label>
+              </form>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Resource</th>
+                      <th scope="col">Resource Type</th>
+                      <th scope="col">Application</th>
+                      <th scope="col">Attributes</th>
+                      <th scope="col">Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows"></tbody>
+                </table>
+              </div>
+              <div id="empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="list"></i></span>
+                <strong>No Registered Resources</strong>
+                <span id="empty-text">None of your Applications has registered a resource yet.</span>
+              </div>
+              <div class="card-footer" id="more-footer" hidden>
+                <span class="hint">More resources to show</span>
+                <button type="button" class="secondary small" id="more">Load more</button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/registered-resources.js"></script>
+  </body>
+</html>

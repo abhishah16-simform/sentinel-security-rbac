@@ -10,6 +10,7 @@ import { validateEnv } from './config/env';
 import { HealthModule } from './health/health.module';
 import { IdentityModule } from './identity/identity.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RegisteredResourcesModule } from './registered-resources/registered-resources.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
@@ -27,6 +28,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     AuditConsoleModule,
     HealthModule,
     IdentityModule,
+    RegisteredResourcesModule,
     SessionsModule,
     TenancyModule,
   ],

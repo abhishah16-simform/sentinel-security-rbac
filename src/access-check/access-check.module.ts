@@ -9,11 +9,13 @@ import { TestAccessController } from './test-access.controller';
 /**
  * The Access Check API that Applications call, around the pure engine in access-check-engine.ts,
  * and the Tenant Admin's Test access panel, which asks the same question for a chosen Membership.
- * Reads Access Rules straight from their tables; nothing imports this module.
+ * Reads Access Rules straight from their tables. Exports AccessCheckService so Registered Resources
+ * can run the same gates and engine over each Membership.
  */
 @Module({
   imports: [AccessTokenModule, ApplicationsModule, AuditModule],
   controllers: [AccessCheckController, TestAccessController],
   providers: [AccessCheckService],
+  exports: [AccessCheckService],
 })
 export class AccessCheckModule {}

@@ -8,6 +8,13 @@ export interface SchemaRows {
   readonly actions: readonly { readonly name: string; readonly deprecatedAt: Date | null }[];
 }
 
+/** An Action of a Resource Type, as reports list it. */
+export interface SchemaAction {
+  readonly name: string;
+  /** Deprecated itself, or through its Resource Type. */
+  readonly deprecated: boolean;
+}
+
 /** Where a Permission's Action on a Resource Type stands in the Application Schema. */
 export type SchemaUsage = 'active' | 'deprecated' | 'unknown';
 
@@ -18,14 +25,34 @@ export type SchemaUsage = 'active' | 'deprecated' | 'unknown';
  */
 export class SchemaIndex {
   private readonly deprecatedByKey = new Map<string, boolean>();
+  private readonly actionsByResourceType = new Map<string, SchemaAction[]>();
 
   constructor(resourceTypes: readonly SchemaRows[]) {
     for (const resourceType of resourceTypes) {
+      const actions: SchemaAction[] = [];
       for (const action of resourceType.actions) {
         const deprecated = resourceType.deprecatedAt !== null || action.deprecatedAt !== null;
         this.deprecatedByKey.set(SchemaIndex.key(resourceType.name, action.name), deprecated);
+        actions.push({ name: action.name, deprecated });
       }
+      actions.sort((a, b) => a.name.localeCompare(b.name));
+      this.actionsByResourceType.set(resourceType.name, actions);
     }
+  }
+
+  /**
+   * Throws a 400 unless the Resource Type is in the Schema, Deprecated or not, as Registered
+   * Resources require. Names match exactly.
+   */
+  assertResourceType(resourceType: string): void {
+    if (!this.actionsByResourceType.has(resourceType)) {
+      throw new BadRequestException(`Resource Type "${resourceType}" is not in the Application Schema (names are case-sensitive)`);
+    }
+  }
+
+  /** Every Action of a Resource Type, Deprecated ones included, by name; none for an unknown one. */
+  actionsOf(resourceType: string): readonly SchemaAction[] {
+    return this.actionsByResourceType.get(resourceType) ?? [];
   }
 
   private static key(resourceType: string, action: string): string {

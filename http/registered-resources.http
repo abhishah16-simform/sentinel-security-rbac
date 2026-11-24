@@ -1,0 +1,77 @@
+# Registered Resources (ticket 13): an Application tells Sentinel about specific resources, and Tenant
+# Admins see who can access each one. Works with the VS Code REST Client or JetBrains HTTP Client.
+# Needs the setup in http/access-checks.http: the Billing Application with Invoice (read, approve,
+# export), enabled in the Tenant, with the Clerk and No export Roles assigned.
+
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token-with-active-tenant
+@tenantId = paste-tenant-id
+@userId = paste-the-tenant-admins-user-id
+@clientId = paste-client-id
+@clientSecret = paste-client-secret
+@registeredResourceId = paste-id-from-the-console-list
+
+### --------------------------------------------------------------- The Application (HTTP Basic)
+
+### 1. Register an invoice (201). The same request again changes nothing (200, no audit entry).
+PUT {{baseUrl}}/v1/registered-resources/{{tenantId}}/Invoice/inv-1001
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "attributes": { "ownerId": "{{userId}}", "amount": 500 } }
+
+### 2. Replace its attributes (200). The audit entry names the changed attributes, not their values.
+PUT {{baseUrl}}/v1/registered-resources/{{tenantId}}/Invoice/inv-1001
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "attributes": { "ownerId": "{{userId}}", "amount": 5000 } }
+
+### 3. Read it back
+GET {{baseUrl}}/v1/registered-resources/{{tenantId}}/Invoice/inv-1001
+Authorization: Basic {{clientId}}:{{clientSecret}}
+
+### 4. The Application's resources in the Tenant, newest first
+GET {{baseUrl}}/v1/registered-resources/{{tenantId}}?resourceType=Invoice&limit=50
+Authorization: Basic {{clientId}}:{{clientSecret}}
+
+### 5. 400: a Resource Type outside the Application Schema (names are case-sensitive)
+PUT {{baseUrl}}/v1/registered-resources/{{tenantId}}/Report/r-1
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "attributes": {} }
+
+### 6. 403: a Tenant that hasn't enabled the Application (or doesn't exist)
+PUT {{baseUrl}}/v1/registered-resources/00000000-0000-4000-8000-000000000000/Invoice/inv-1001
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "attributes": {} }
+
+### 7. An ID with a slash is URL-encoded in the path
+PUT {{baseUrl}}/v1/registered-resources/{{tenantId}}/Invoice/2026%2F0042
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "attributes": { "amount": 120 } }
+
+### 8. Remove it (204); again is a 404
+DELETE {{baseUrl}}/v1/registered-resources/{{tenantId}}/Invoice/2026%2F0042
+Authorization: Basic {{clientId}}:{{clientSecret}}
+
+### --------------------------------------------------------------- The Tenant Admin console (Bearer)
+
+### 9. The Tenant's Registered Resources. Copy an id into @registeredResourceId.
+GET {{baseUrl}}/v1/tenants/current/registered-resources?resourceId=inv-1001
+Authorization: Bearer {{tenantToken}}
+
+### 10. Access by Registered Resource: for each member with a Role in Billing, the Access Check answer
+###     for approve, export and read on inv-1001. With amount 5000, No export's conditional Deny
+###     Rule wins for approve; read is allowed only for the owner. Page with limit and cursor.
+GET {{baseUrl}}/v1/tenants/current/registered-resources/{{registeredResourceId}}/access
+Authorization: Bearer {{tenantToken}}
+
+### 11. The changes in the Tenant's audit chain, with no actor
+GET {{baseUrl}}/v1/audit-events?eventType=registered_resource.updated
+Authorization: Bearer {{tenantToken}}

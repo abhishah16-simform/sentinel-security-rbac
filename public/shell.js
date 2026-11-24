@@ -10,6 +10,7 @@
     '/platform-application.html': '/platform-applications.html',
     '/application.html': '/applications.html',
     '/role.html': '/roles.html',
+    '/registered-resource.html': '/registered-resources.html',
   };
   const current = detailOf[path] || path;
 
@@ -43,6 +44,7 @@
     navItem('/permissions.html', 'lock', 'Permissions') +
     navItem('/role-assignments.html', 'shieldCheck', 'Role assignments') +
     navItem('/test-access.html', 'search', 'Test access') +
+    navItem('/registered-resources.html', 'list', 'Resources') +
     navItem('/applications.html', 'grid', 'Applications') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +

@@ -57,6 +57,14 @@ function toResult(verdict: EngineVerdict): AccessCheckResult {
   return { allowed: verdict.allowed, reason: verdict.reason, roleId: verdict.roleId, permissionId: verdict.permissionId };
 }
 
+/** What an Access Check would answer for many Memberships: why all are denied, if one gate does, and each answer. */
+export interface ManyAnswers {
+  /** The Tenant or Enablement gate that denies every check, or null. */
+  readonly deniedBecause: GateReason | null;
+  /** Each Membership's answers, keyed by membershipId, in the order of the Actions asked. */
+  readonly answers: ReadonlyMap<string, readonly AccessCheckResult[]>;
+}
+
 /**
  * The Access Check API: answers whether a User may perform an Action on a resource of one
  * Application. Authentication of the Application happens before this (ClientCredentialsGuard); then
@@ -103,6 +111,46 @@ export class AccessCheckService {
     });
   }
 
+  /**
+   * What an Access Check would answer at `now` for each of several Memberships of one Tenant (each asker's
+   * tenantId must be it), for each of several Actions on one resource: the same gates and engine, with one read of the Tenant, the
+   * Enablement and the active Permissions for all of them. The caller passes Memberships it has just
+   * read in the same transaction, so the no-membership gate isn't checked again.
+   */
+  async answerMany(
+    tx: ScopedTransaction,
+    now: Date,
+    tenantId: string,
+    applicationId: string,
+    askers: readonly EngineContext[],
+    question: {
+      readonly resourceType: string;
+      readonly actions: readonly string[];
+      readonly attributes: Readonly<Record<string, unknown>>;
+    },
+  ): Promise<ManyAnswers> {
+    const answers = new Map<string, readonly AccessCheckResult[]>();
+    const deniedBecause = await this.gate(tx, tenantId, applicationId);
+    const permissions = deniedBecause
+      ? new Map<string, EnginePermission[]>()
+      : await this.activePermissions(tx, now, tenantId, applicationId, askers.map((asker) => asker.membershipId), {
+          resourceType: question.resourceType,
+          actions: question.actions,
+        });
+    for (const asker of askers) {
+      const held = permissions.get(asker.membershipId) ?? [];
+      answers.set(
+        asker.membershipId,
+        question.actions.map((action) =>
+          deniedBecause
+            ? denied(deniedBecause)
+            : toResult(evaluateAccess(held, asker, { action, resourceType: question.resourceType, attributes: question.attributes })),
+        ),
+      );
+    }
+    return { deniedBecause, answers };
+  }
+
   private async answer(
     tx: ScopedTransaction,
     applicationId: string,
@@ -113,44 +161,74 @@ export class AccessCheckService {
     const now = new Date();
     const { tenantId, membershipId, userId } = asker;
 
+    const gate = await this.gate(tx, tenantId, applicationId);
+    if (gate) return denied(gate);
+
+    const membership = await tx.membership.findFirst({ where: { id: membershipId, tenantId, userId }, select: { id: true } });
+    if (!membership) return denied('no-membership');
+
+    const permissions = await this.activePermissions(tx, now, tenantId, applicationId, [membershipId], {
+      resourceType: input.resourceType,
+      actions: [input.action],
+    });
+    const verdict = evaluateAccess(
+      permissions.get(membershipId) ?? [],
+      asker,
+      { action: input.action, resourceType: input.resourceType, attributes: input.resource?.attributes ?? {} },
+    );
+    return toResult(verdict);
+  }
+
+  /** The Tenant and Enablement gates, in that order: why every check would be denied, or null. */
+  private async gate(tx: ScopedTransaction, tenantId: string, applicationId: string): Promise<GateReason | null> {
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { suspendedAt: true } });
     // Tenants are never deleted, but a token naming one that doesn't exist has no Membership in it.
-    if (!tenant) return denied('no-membership');
-    if (tenant.suspendedAt !== null) return denied('tenant-suspended');
+    if (!tenant) return 'no-membership';
+    if (tenant.suspendedAt !== null) return 'tenant-suspended';
 
     const enablement = await tx.enablement.findUnique({
       where: { tenantId_applicationId: { tenantId, applicationId } },
       select: { disabledAt: true },
     });
-    if (!enablement || enablement.disabledAt !== null) return denied('application-not-enabled');
+    if (!enablement || enablement.disabledAt !== null) return 'application-not-enabled';
+    return null;
+  }
 
-    const membership = await tx.membership.findFirst({ where: { id: membershipId, tenantId, userId }, select: { id: true } });
-    if (!membership) return denied('no-membership');
-
+  /**
+   * The Permissions on one Resource Type (and only the given Actions) that each Membership holds
+   * through its active Role Assignments in one Application at `now`, keyed by membershipId.
+   */
+  private async activePermissions(
+    tx: ScopedTransaction,
+    now: Date,
+    tenantId: string,
+    applicationId: string,
+    membershipIds: readonly string[],
+    on: { readonly resourceType: string; readonly actions: readonly string[] },
+  ): Promise<ReadonlyMap<string, EnginePermission[]>> {
     const assignments = await tx.roleAssignment.findMany({
-      where: { tenantId, membershipId, applicationId, ...activeAssignmentWhere(now) },
+      where: { tenantId, membershipId: { in: [...membershipIds] }, applicationId, ...activeAssignmentWhere(now) },
       select: {
+        membershipId: true,
         role: {
           select: {
             id: true,
             permissions: {
-              where: { action: input.action, resourceType: input.resourceType },
+              where: { action: { in: [...on.actions] }, resourceType: on.resourceType },
               select: { id: true, action: true, resourceType: true, inverted: true, conditions: true },
             },
           },
         },
       },
     });
-    const permissions: EnginePermission[] = assignments.flatMap(({ role }) =>
-      role ? role.permissions.map((permission) => ({ ...permission, roleId: role.id })) : [],
-    );
-
-    const verdict = evaluateAccess(
-      permissions,
-      asker,
-      { action: input.action, resourceType: input.resourceType, attributes: input.resource?.attributes ?? {} },
-    );
-    return toResult(verdict);
+    const byMembership = new Map<string, EnginePermission[]>();
+    for (const { membershipId, role } of assignments) {
+      if (!membershipId || !role) continue;
+      const held = byMembership.get(membershipId) ?? [];
+      held.push(...role.permissions.map((permission) => ({ ...permission, roleId: role.id })));
+      byMembership.set(membershipId, held);
+    }
+    return byMembership;
   }
 
   /**
