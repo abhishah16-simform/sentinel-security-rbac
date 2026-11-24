@@ -1818,3 +1818,56 @@ button.link:hover {
   justify-items: start;
   gap: 2px;
 }
+
+/* ------------------------------------------------------------------ sidebar: pages not available */
+
+.nav-locked summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 7px;
+}
+
+.nav-locked summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-locked summary:hover {
+  color: var(--text-2);
+}
+
+.nav-locked summary svg {
+  width: 12px;
+  height: 12px;
+}
+
+.nav-locked summary svg:last-child {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+
+.nav-locked[open] summary svg:last-child {
+  transform: rotate(90deg);
+}
+
+.nav-item.locked {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.nav-note {
+  margin: 6px 4px 0;
+  padding: 8px 10px;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  background: var(--warn-soft);
+  border-radius: 7px;
+}
+
+.nav-note strong {
+  display: block;
+  color: var(--text);
+}

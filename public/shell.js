@@ -19,6 +19,11 @@
     return '<a class="nav-item" href="' + href + '"' + here + '><i data-icon="' + icon + '"></i>' + label + '</a>';
   }
 
+  // A page only Tenant Admins of the Active Tenant can use; moved to "Not available" for anyone else.
+  function adminItem(href, icon, label) {
+    return navItem(href, icon, label).replace('<a class="nav-item"', '<a class="nav-item" data-tenant-admin data-label="' + label + '"');
+  }
+
   function soonItem(icon, label) {
     return (
       '<span class="nav-item" aria-disabled="true"><i data-icon="' + icon + '"></i>' + label +
@@ -36,16 +41,16 @@
     navItem('/index.html', 'home', 'Overview') +
     navItem('/tenants.html', 'building', 'Tenants') +
     navItem('/invitations.html', 'mail', 'Invitations') +
-    navItem('/members.html', 'users', 'Members') +
+    adminItem('/members.html', 'users', 'Members') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Access control">' +
     '<div class="nav-label">Access control</div>' +
-    navItem('/roles.html', 'key', 'Roles') +
-    navItem('/permissions.html', 'lock', 'Permissions') +
-    navItem('/role-assignments.html', 'shieldCheck', 'Role assignments') +
-    navItem('/test-access.html', 'search', 'Test access') +
-    navItem('/registered-resources.html', 'list', 'Resources') +
-    navItem('/applications.html', 'grid', 'Applications') +
+    adminItem('/roles.html', 'key', 'Roles') +
+    adminItem('/permissions.html', 'lock', 'Permissions') +
+    adminItem('/role-assignments.html', 'shieldCheck', 'Role assignments') +
+    adminItem('/test-access.html', 'search', 'Test access') +
+    adminItem('/registered-resources.html', 'list', 'Resources') +
+    adminItem('/applications.html', 'grid', 'Applications') +
     '</nav>' +
     '<nav class="nav-section" aria-label="Platform" id="platform-nav" hidden>' +
     '<div class="nav-label">Platform</div>' +
@@ -54,10 +59,15 @@
     '</nav>' +
     '<nav class="nav-section" aria-label="Compliance">' +
     '<div class="nav-label">Compliance</div>' +
-    navItem('/audit-log.html', 'list', 'Audit log') +
+    adminItem('/audit-log.html', 'list', 'Audit log') +
     soonItem('clipboardCheck', 'Access reviews') +
     soonItem('bell', 'Alerts') +
     '</nav>' +
+    '<details class="nav-section nav-locked" id="locked-nav" hidden>' +
+    '<summary class="nav-label"><i data-icon="lock"></i><span id="locked-count">Not available</span><i data-icon="chevronRight"></i></summary>' +
+    '<div id="locked-items"></div>' +
+    '<p class="nav-note" id="locked-note" role="status" hidden></p>' +
+    '</details>' +
     '<div class="sidebar-footer"><details class="user-menu" id="user-menu">' +
     '<summary><span class="avatar" id="user-avatar"></span>' +
     '<span class="user-text"><strong id="user-name"></strong><span id="user-email"></span></span>' +
@@ -69,6 +79,89 @@
     '<button class="menu-item danger" role="menuitem" type="button" id="menu-logout"><i data-icon="logout"></i>Log out</button>' +
     '</div></details></div>';
   Icons.hydrate(sidebar);
+
+  // ---- Pages the user can't open: collapsed under "Not available", with the reason on click ----------
+
+  const lockedNav = document.getElementById('locked-nav');
+  const lockedItems = document.getElementById('locked-items');
+  const lockedNote = document.getElementById('locked-note');
+  // Each Tenant Admin page remembers its place, so it can go back when access is known to allow it.
+  const adminItems = Array.prototype.slice.call(sidebar.querySelectorAll('[data-tenant-admin]')).map(function (item) {
+    const home = document.createComment(item.dataset.label);
+    item.before(home);
+    return { item: item, home: home };
+  });
+  let lockReason = '';
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // access: { platformAdmin, tenant: { tenantName, isTenantAdmin } | null }
+  function reasonFor(access) {
+    if (access.tenant) {
+      return 'Only Tenant Admins of ' + escapeHtml(access.tenant.tenantName) + ' can open it. Ask one of them to make you a Tenant Admin.';
+    }
+    if (access.platformAdmin) {
+      return 'Platform Admins work outside every Tenant and can\'t see Tenant data. To manage a Tenant, join it as a member and choose it on <a href="/tenants.html">Tenants</a>.';
+    }
+    return 'It belongs to a Tenant. Choose one on <a href="/tenants.html">Tenants</a> first; then its Tenant Admins can open it.';
+  }
+
+  function applyAccess(access) {
+    const allowed = Boolean(access.tenant && access.tenant.isTenantAdmin);
+    lockReason = reasonFor(access);
+    adminItems.forEach(function (entry) {
+      if (allowed) {
+        entry.home.after(entry.item);
+        entry.item.classList.remove('locked');
+        entry.item.removeAttribute('aria-describedby');
+      } else {
+        lockedItems.append(entry.item);
+        // Still a link, so keyboards and screen readers can reach it; clicking explains instead of opening.
+        entry.item.classList.add('locked');
+        entry.item.setAttribute('aria-describedby', 'locked-note');
+      }
+    });
+    // A section left with nothing but its heading is hidden.
+    sidebar.querySelectorAll('nav.nav-section').forEach(function (section) {
+      if (section.id === 'platform-nav') return;
+      section.hidden = !section.querySelector('.nav-item');
+    });
+    lockedNav.hidden = allowed;
+    document.getElementById('locked-count').textContent = 'Not available (' + adminItems.length + ')';
+    lockedNote.hidden = true;
+    // Someone who opened a locked page directly sees where it went.
+    if (!allowed && lockedItems.querySelector('[aria-current="page"]')) lockedNav.open = true;
+  }
+
+  lockedItems.addEventListener('click', function (event) {
+    const item = event.target.closest('a.nav-item');
+    if (!item) return;
+    event.preventDefault();
+    lockedNote.innerHTML = '<strong>' + escapeHtml(item.dataset.label) + ' isn\'t available to you.</strong> ' + lockReason;
+    lockedNote.hidden = false;
+  });
+
+  // Works out access from the session itself, so it doesn't depend on what each page passes to
+  // setTenant (Platform pages always pass null).
+  function resolveAccess(me) {
+    const claims = Sentinel.claims();
+    if (!claims || !claims.tid) {
+      applyAccess({ platformAdmin: me.isPlatformAdmin, tenant: null });
+      return;
+    }
+    Sentinel.api('/v1/tenants/current')
+      .then(function (tenant) {
+        applyAccess({ platformAdmin: me.isPlatformAdmin, tenant: tenant });
+      })
+      .catch(function () {
+        // A suspended Tenant, or a Membership that just ended: treat it as no Tenant.
+        applyAccess({ platformAdmin: me.isPlatformAdmin, tenant: null });
+      });
+  }
 
   const backdrop = document.createElement('div');
   backdrop.className = 'sidebar-backdrop';
@@ -138,6 +231,7 @@
     fullName: fullName,
     setUser(me) {
       document.getElementById('platform-nav').hidden = !me.isPlatformAdmin;
+      resolveAccess(me);
       const name = fullName(me);
       document.getElementById('user-avatar').textContent = initials(name || me.email);
       document.getElementById('user-name').textContent = name || me.email;
