@@ -6,7 +6,11 @@
   const filters = document.getElementById('filters');
   const filterApplication = document.getElementById('filter-application');
   const filterResourceId = document.getElementById('filter-resource-id');
+  const registerForm = document.getElementById('register-form');
+  const registerApplication = document.getElementById('register-application');
+  const registerResourceType = document.getElementById('register-resource-type');
   const base = '/v1/tenants/current/registered-resources';
+  const schemas = new Map();
   let nextCursor = null;
 
   function block(title, text, showLink) {
@@ -43,6 +47,30 @@
       cursor = page.nextCursor;
     } while (cursor);
     return items;
+  }
+
+  function parseAttributes(text) {
+    if (!text.trim()) return undefined;
+    let value;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      throw new Error('Attributes must be valid JSON.');
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new Error('Attributes must be a JSON object, such as { "ownerId": "…" }.');
+    }
+    return value;
+  }
+
+  function fillResourceTypes() {
+    const resourceTypes = schemas.get(registerApplication.value) || [];
+    registerResourceType.replaceChildren.apply(
+      registerResourceType,
+      resourceTypes.map(function (resourceType) {
+        return option(resourceType.name, resourceType.name + (resourceType.deprecated ? ' (Deprecated)' : ''));
+      }),
+    );
   }
 
   function resourceRow(resource) {
@@ -96,6 +124,24 @@
     });
   }
 
+  registerApplication.addEventListener('change', fillResourceTypes);
+
+  handleForm(registerForm, document.getElementById('message'), async function (data) {
+    const body = {
+      applicationId: String(data.get('applicationId')),
+      resourceType: String(data.get('resourceType')),
+      resourceId: String(data.get('resourceId') || '').trim(),
+    };
+    const attributes = parseAttributes(String(data.get('attributes') || ''));
+    if (attributes) body.attributes = attributes;
+    const resource = await Sentinel.api(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    window.location.href = '/registered-resource.html?id=' + encodeURIComponent(resource.id);
+  });
+
   filterApplication.addEventListener('change', refreshOrReport);
   filters.addEventListener('submit', function (event) {
     event.preventDefault();
@@ -118,7 +164,8 @@
       window.location.href = '/login.html';
       return;
     }
-    Shell.setUser(await Sentinel.api('/v1/me'));
+    const me = await Sentinel.api('/v1/me');
+    Shell.setUser(me);
     if (!Sentinel.claims().tid) {
       Shell.setTenant(null);
       block('No Active Tenant', 'Registered Resources belong to a Tenant. Choose one first.', true);
@@ -134,6 +181,26 @@
     applications.forEach(function (application) {
       filterApplication.append(option(application.id, application.name));
     });
+    // Resources can be registered for enabled Applications whose Schema has Resource Types.
+    const details = await Promise.all(
+      applications
+        .filter(function (application) {
+          return application.enabled;
+        })
+        .map(function (application) {
+          return Sentinel.api('/v1/tenants/current/applications/' + encodeURIComponent(application.id));
+        }),
+    );
+    details.forEach(function (application) {
+      if (application.resourceTypes.length === 0) return;
+      schemas.set(application.id, application.resourceTypes);
+      registerApplication.append(option(application.id, application.name));
+    });
+    registerForm.hidden = schemas.size === 0;
+    document.getElementById('no-applications').hidden = schemas.size > 0;
+    document.getElementById('register-hint').textContent =
+      'Conditions match these attributes. Your User ID, for "ownerId"-style attributes, is ' + me.id + '.';
+    fillResourceTypes();
     await refresh();
     document.getElementById('loading').hidden = true;
     document.getElementById('console').hidden = false;

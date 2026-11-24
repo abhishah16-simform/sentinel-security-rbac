@@ -1,13 +1,17 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
-import { AccessTokenGuard } from '../access-token/access-token.guard';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { AccessTokenGuard, CurrentClaims } from '../access-token/access-token.guard';
+import type { AccessTokenClaims } from '../access-token/access-token.service';
 import { TenantAdminGuard } from '../access-token/admin.guards';
 import { type Page, PageQuery } from '../common/pagination';
 import { ActiveTenant } from '../tenancy/active-tenant.guard';
 import type { ActiveTenantRef } from '../tenancy/tenancy.service';
-import { TenantResourceListQuery } from './dto/registered-resource.dto';
+import { CreateRegisteredResourceDto, TenantResourceListQuery } from './dto/registered-resource.dto';
 import { type RegisteredResourceView, RegisteredResourcesService, type ResourceAccessReport } from './registered-resources.service';
 
-/** The Active Tenant's Registered Resources and who can access each, for its Tenant Admins. Read-only. */
+/**
+ * The Active Tenant's Registered Resources and who can access each, for its Tenant Admins. They may
+ * also register one by hand; keeping its attributes current is left to the Application.
+ */
 @Controller('tenants/current/registered-resources')
 @UseGuards(AccessTokenGuard, TenantAdminGuard)
 export class ResourceAccessController {
@@ -17,6 +21,16 @@ export class ResourceAccessController {
   @Get()
   list(@ActiveTenant() active: ActiveTenantRef, @Query() query: TenantResourceListQuery): Promise<Page<RegisteredResourceView>> {
     return this.resources.list(active.tenantId, query);
+  }
+
+  /** Register a resource for one of the Tenant's enabled Applications (201); 409 if it is already registered. */
+  @Post()
+  create(
+    @ActiveTenant() active: ActiveTenantRef,
+    @CurrentClaims() claims: AccessTokenClaims,
+    @Body() body: CreateRegisteredResourceDto,
+  ): Promise<RegisteredResourceView> {
+    return this.resources.createFromConsole(active.tenantId, claims.sub, body);
   }
 
   @Get(':id')

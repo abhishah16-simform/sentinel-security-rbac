@@ -57,3 +57,21 @@ export class TenantResourceListQuery extends ApplicationResourceListQuery {
   @MaxLength(RESOURCE_ID_MAX_LENGTH)
   resourceId?: string;
 }
+
+/** A Tenant Admin registering a resource from the console, on behalf of one of the Tenant's Applications. */
+export class CreateRegisteredResourceDto extends PutRegisteredResourceDto {
+  /** An Application the Tenant has enabled. */
+  @IsUUID()
+  applicationId!: string;
+
+  /** A Resource Type in that Application's Schema, matched case-sensitively. */
+  @IsString()
+  @Matches(SCHEMA_NAME_PATTERN, { message: `resourceType ${SCHEMA_NAME_RULE}` })
+  resourceType!: string;
+
+  /** The Application's own ID for the resource. */
+  @IsString()
+  @MinLength(1)
+  @MaxLength(RESOURCE_ID_MAX_LENGTH)
+  resourceId!: string;
+}

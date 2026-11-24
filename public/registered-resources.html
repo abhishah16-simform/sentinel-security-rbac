@@ -46,11 +46,48 @@
           </section>
 
           <div id="console" class="stack" hidden>
+            <section class="card" aria-labelledby="new-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="new-title">Register a resource</h2>
+                  <p>Applications usually register their own resources through the API. Add one here to see who can access it; the Application keeps its attributes up to date.</p>
+                </div>
+                <span class="icon-tile"><i data-icon="plus"></i></span>
+              </div>
+              <form id="register-form" class="inline-form form" hidden>
+                <div class="row">
+                  <label>
+                    Application
+                    <select name="applicationId" id="register-application" required></select>
+                  </label>
+                  <label>
+                    Resource Type
+                    <select name="resourceType" id="register-resource-type" required></select>
+                  </label>
+                  <label>
+                    Resource ID
+                    <input name="resourceId" required maxlength="256" autocomplete="off" placeholder="inv-1001" />
+                  </label>
+                </div>
+                <label>
+                  Attributes (JSON, optional)
+                  <textarea name="attributes" class="mono" rows="4" spellcheck="false" placeholder='{ "ownerId": "…", "amount": 500 }'></textarea>
+                </label>
+                <p class="hint" id="register-hint"></p>
+                <div class="actions"><button type="submit"><i data-icon="plus"></i>Register resource</button></div>
+              </form>
+              <div id="no-applications" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="grid"></i></span>
+                <strong>No enabled Applications with a Schema</strong>
+                <span>Enable an Application that declares Resource Types first.</span>
+                <a class="button secondary" href="/applications.html">Applications</a>
+              </div>
+            </section>
             <section class="card" aria-labelledby="list-title">
               <div class="card-header">
                 <div>
                   <h2 id="list-title">Resources</h2>
-                  <p>Newest first. Applications register, update and remove them through the API; they can't be changed here.</p>
+                  <p>Newest first. Applications register, update and remove them through the API.</p>
                 </div>
                 <span class="icon-tile"><i data-icon="list"></i></span>
               </div>

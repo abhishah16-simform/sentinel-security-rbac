@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { type ActionAnswer, AccessCheckService, type GateReason } from '../access-check/access-check.service';
 import { activeAssignmentWhere } from '../access-rules/role-assignment-ending';
@@ -11,6 +11,7 @@ import { isUniqueConstraintError } from '../common/prisma-errors';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import type {
   ApplicationResourceListQuery,
+  CreateRegisteredResourceDto,
   PutRegisteredResourceDto,
   RegisteredResourcePath,
   TenantResourceListQuery,
@@ -135,14 +136,14 @@ export class RegisteredResourcesService {
           },
           include: RESOURCE_INCLUDE,
         });
-        await this.record(tx, 'registered_resource.created', application, created, {});
+        await this.record(tx, 'registered_resource.created', null, created, {});
         return { created: true, resource: toView(created) };
       }
       const changed = changedKeys(storedAttributes(existing.attributes), attributes);
       // An unchanged PUT writes nothing, so Applications can resend their resources freely.
       if (changed.length === 0) return { created: false, resource: toView(existing) };
       const updated = await tx.registeredResource.update({ where: { id: existing.id }, data: { attributes }, include: RESOURCE_INCLUDE });
-      await this.record(tx, 'registered_resource.updated', application, updated, { changedAttributes: changed.join(',') });
+      await this.record(tx, 'registered_resource.updated', null, updated, { changedAttributes: changed.join(',') });
       return { created: false, resource: toView(updated) };
     });
   }
@@ -160,7 +161,7 @@ export class RegisteredResourcesService {
       const row = await this.findByKey(tx, application.id, path);
       if (!row) throw new NotFoundException('Registered Resource not found');
       await tx.registeredResource.delete({ where: { id: row.id } });
-      await this.record(tx, 'registered_resource.deleted', application, row, {});
+      await this.record(tx, 'registered_resource.deleted', null, row, {});
     });
   }
 
@@ -207,23 +208,27 @@ export class RegisteredResourcesService {
     });
   }
 
-  /** A registered_resource.* entry in the Tenant's chain. The attributes stay out: they are the Application's data. */
+  /**
+   * A registered_resource.* entry in the Tenant's chain. The actor is the Tenant Admin who registered it
+   * from the console, or null when the Application did. The attributes stay out: they are the
+   * Application's data.
+   */
   private record(
     tx: ScopedTransaction,
     eventType: 'registered_resource.created' | 'registered_resource.updated' | 'registered_resource.deleted',
-    application: ApplicationSummary,
+    actorUserId: string | null,
     row: ResourceRow,
     payload: AuditPayload,
   ): Promise<void> {
     return this.audit.recordIn(tx, {
       tenantId: row.tenantId,
       eventType,
-      actorUserId: null,
+      actorUserId,
       target: { type: 'resource', id: row.resourceId },
-      applicationId: application.id,
+      applicationId: row.applicationId,
       payload: {
         registeredResourceId: row.id,
-        application: application.name,
+        application: row.application.name,
         resourceType: row.resourceType,
         resourceId: row.resourceId,
         ...payload,
@@ -242,6 +247,46 @@ export class RegisteredResourcesService {
         query,
       ),
     );
+  }
+
+  /**
+   * A Tenant Admin registers a resource from the console, as its Application would: the Application
+   * must be enabled (409 otherwise, 404 if unknown) and the Resource Type in its Schema (400). A
+   * resource that is already registered is a 409; the Application keeps its attributes up to date.
+   */
+  async createFromConsole(tenantId: string, actorUserId: string, input: CreateRegisteredResourceDto): Promise<RegisteredResourceView> {
+    const attributes = parseAttributes(input.attributes);
+    try {
+      return await this.scoped.inTenant(tenantId, async (tx) => {
+        const application = await tx.application.findUnique({ where: { id: input.applicationId }, select: { name: true } });
+        if (!application) throw new NotFoundException('Application not found');
+        const enablement = await tx.enablement.findUnique({
+          where: { tenantId_applicationId: { tenantId, applicationId: input.applicationId } },
+          select: { disabledAt: true },
+        });
+        if (!enablement || enablement.disabledAt !== null) {
+          throw new ConflictException(`Enable ${application.name} before registering its resources`);
+        }
+        (await loadSchemaIndex(tx, input.applicationId)).assertResourceType(input.resourceType);
+        const created = await tx.registeredResource.create({
+          data: {
+            tenantId,
+            applicationId: input.applicationId,
+            resourceType: input.resourceType,
+            resourceId: input.resourceId,
+            attributes,
+          },
+          include: RESOURCE_INCLUDE,
+        });
+        await this.record(tx, 'registered_resource.created', actorUserId, created, {});
+        return toView(created);
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        throw new ConflictException(`${input.resourceType} "${input.resourceId}" is already registered for this Application`);
+      }
+      throw error;
+    }
   }
 
   get(tenantId: string, id: string): Promise<RegisteredResourceView> {

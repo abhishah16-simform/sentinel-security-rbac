@@ -54,7 +54,7 @@ export const AUDIT_EVENT_TYPES = {
   'role.permission_removed': 'Removed Permission from Role',
   'role_assignment.created': 'Assigned Role',
   'role_assignment.revoked': 'Revoked Role Assignment',
-  /** Written by an Application, so they have no actor. */
+  /** No actor when the Application wrote it; the Tenant Admin when registered from the console. */
   'registered_resource.created': 'Registered Resource',
   'registered_resource.updated': 'Updated Registered Resource',
   'registered_resource.deleted': 'Removed Registered Resource',

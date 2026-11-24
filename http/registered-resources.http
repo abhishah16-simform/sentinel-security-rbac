@@ -62,6 +62,14 @@ Authorization: Basic {{clientId}}:{{clientSecret}}
 
 ### --------------------------------------------------------------- The Tenant Admin console (Bearer)
 
+### 9a. Register one by hand, as a Tenant Admin (201). 409 if it is already registered or the
+###     Application isn't enabled. The console's form on /registered-resources.html does the same.
+POST {{baseUrl}}/v1/tenants/current/registered-resources
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "applicationId": "paste-application-id", "resourceType": "Invoice", "resourceId": "inv-2001", "attributes": { "ownerId": "{{userId}}", "amount": 2000 } }
+
 ### 9. The Tenant's Registered Resources. Copy an id into @registeredResourceId.
 GET {{baseUrl}}/v1/tenants/current/registered-resources?resourceId=inv-1001
 Authorization: Bearer {{tenantToken}}
