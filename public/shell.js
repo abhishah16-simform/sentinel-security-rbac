@@ -60,6 +60,7 @@
     '<nav class="nav-section" aria-label="Compliance">' +
     '<div class="nav-label">Compliance</div>' +
     adminItem('/audit-log.html', 'list', 'Audit log') +
+    adminItem('/expiring-access.html', 'clock', 'Expiring access') +
     soonItem('clipboardCheck', 'Access reviews') +
     soonItem('bell', 'Alerts') +
     '</nav>' +

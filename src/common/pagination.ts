@@ -32,17 +32,32 @@ export interface PageCursor {
   readonly id: string;
 }
 
+/** A row's position in a list ordered by some other time column, then id. */
+export interface TimeCursor {
+  readonly time: Date;
+  readonly id: string;
+}
+
+export function encodeTimeCursor(position: TimeCursor): string {
+  return Buffer.from(`${position.time.toISOString()}|${position.id}`).toString('base64url');
+}
+
+export function decodeTimeCursor(cursor: string): TimeCursor {
+  const [text, id] = Buffer.from(cursor, 'base64url').toString().split('|');
+  const time = new Date(text ?? '');
+  if (!id || !UUID_PATTERN.test(id) || Number.isNaN(time.getTime())) {
+    throw new BadRequestException('cursor is not valid');
+  }
+  return { time, id };
+}
+
 export function encodeCursor(row: PageCursor): string {
-  return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`).toString('base64url');
+  return encodeTimeCursor({ time: row.createdAt, id: row.id });
 }
 
 export function decodeCursor(cursor: string): PageCursor {
-  const [time, id] = Buffer.from(cursor, 'base64url').toString().split('|');
-  const createdAt = new Date(time ?? '');
-  if (!id || !UUID_PATTERN.test(id) || Number.isNaN(createdAt.getTime())) {
-    throw new BadRequestException('cursor is not valid');
-  }
-  return { createdAt, id };
+  const { time, id } = decodeTimeCursor(cursor);
+  return { createdAt: time, id };
 }
 
 export function pageSize(limit: string | undefined): number {

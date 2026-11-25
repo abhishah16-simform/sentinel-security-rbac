@@ -2,9 +2,17 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Prisma } from '@prisma/client';
 import { loadSchemaIndexes, SchemaIndex } from '../applications/schema-index';
 import { AuditLog } from '../audit/audit-log.service';
-import { type Page, pageWindow, toPage } from '../common/pagination';
+import {
+  decodeTimeCursor,
+  encodeTimeCursor,
+  type Page,
+  type PageQuery,
+  pageSize,
+  pageWindow,
+  toPage,
+} from '../common/pagination';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
-import type { RoleAssignmentListQuery, RoleAssignmentStatus } from './dto/role-assignment.dto';
+import type { ExpiringReportQuery, RoleAssignmentListQuery, RoleAssignmentStatus } from './dto/role-assignment.dto';
 import {
   activeAssignmentWhere,
   END_REASON_LABELS,
@@ -20,6 +28,12 @@ export const MAX_ACTIVE_ASSIGNMENTS_PER_MEMBERSHIP = 200;
 
 /** How far ahead an expiry time may be. */
 const MAX_EXPIRY_YEARS = 10;
+
+/** The expiring-soon report's look-ahead window when none is given, and the longest allowed. */
+export const DEFAULT_LOOK_AHEAD_DAYS = 7;
+export const MAX_LOOK_AHEAD_DAYS = 365;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The person a Role Assignment is for. membershipId is null once the Membership has ended. */
 export interface AssignedMember {
@@ -45,6 +59,24 @@ export interface RoleAssignmentView {
   readonly revokedByName: string | null;
   /** Why it was revoked: revoked (by a Tenant Admin), role-deleted or membership-ended. */
   readonly endReason: EndReasonLabel | null;
+  /**
+   * When the Scheduler marked an expired assignment and wrote it to the Audit Log; null until then.
+   * It gives no access from expiresAt either way.
+   */
+  readonly expiryRecordedAt: Date | null;
+}
+
+/** One page of the expiring-soon or expired report. */
+export interface ExpiryReportPage extends Page<RoleAssignmentView> {
+  /** The moment the report was worked out. */
+  readonly asOf: Date;
+}
+
+/** Active Temporary Role Assignments that expire within the look-ahead window, soonest first. */
+export interface ExpiringSoonReport extends ExpiryReportPage {
+  readonly withinDays: number;
+  /** The end of the window: asOf plus withinDays. */
+  readonly windowEnd: Date;
 }
 
 /** One Permission a Membership holds through one of its active Role Assignments. */
@@ -149,6 +181,43 @@ function toView(row: AssignmentRow, enabled: ReadonlySet<string>, now: Date): Ro
     revokedAt: row.revokedAt,
     revokedByName: displayName(row.revokedBy),
     endReason: row.endReason === null ? null : END_REASON_LABELS[row.endReason],
+    expiryRecordedAt: row.expiryRecordedAt,
+  };
+}
+
+/** The look-ahead window in days: a whole number from 1 to MAX_LOOK_AHEAD_DAYS. */
+function lookAheadDays(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_LOOK_AHEAD_DAYS;
+  const days = Number(value);
+  if (days < 1 || days > MAX_LOOK_AHEAD_DAYS) {
+    throw new BadRequestException(`withinDays must be between 1 and ${MAX_LOOK_AHEAD_DAYS}`);
+  }
+  return days;
+}
+
+/** A keyset window over rows ordered by (expiresAt, id); the reports only list rows with an expiry. */
+function expiryWindow(query: PageQuery, direction: 'asc' | 'desc') {
+  const limit = pageSize(query.limit);
+  const orderBy: Prisma.RoleAssignmentOrderByWithRelationInput[] = [{ expiresAt: direction }, { id: direction }];
+  if (query.cursor === undefined) return { limit, take: limit + 1, orderBy, after: {} };
+  const { time, id } = decodeTimeCursor(query.cursor);
+  const beyond = direction === 'asc' ? { gt: time } : { lt: time };
+  const beyondId = direction === 'asc' ? { gt: id } : { lt: id };
+  const after: Prisma.RoleAssignmentWhereInput = { OR: [{ expiresAt: beyond }, { expiresAt: time, id: beyondId }] };
+  return { limit, take: limit + 1, orderBy, after };
+}
+
+function toExpiryPage(
+  rows: readonly AssignmentRow[],
+  limit: number,
+  enabled: ReadonlySet<string>,
+  now: Date,
+): Page<RoleAssignmentView> {
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    items: page.map((row) => toView(row, enabled, now)),
+    nextCursor: rows.length > limit && last?.expiresAt ? encodeTimeCursor({ time: last.expiresAt, id: last.id }) : null,
   };
 }
 
@@ -201,6 +270,43 @@ export class RoleAssignmentsService {
       });
       const enabled = await enabledApplications(tx, tenantId, rows.map((row) => row.applicationId));
       return toPage(rows, window, (row) => toView(row, enabled, now));
+    });
+  }
+
+  /**
+   * Expiring soon: active Temporary Role Assignments whose expiry time falls within the next
+   * withinDays days (default DEFAULT_LOOK_AHEAD_DAYS), soonest first.
+   */
+  async expiringSoon(tenantId: string, query: ExpiringReportQuery): Promise<ExpiringSoonReport> {
+    const withinDays = lookAheadDays(query.withinDays);
+    const window = expiryWindow(query, 'asc');
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + withinDays * DAY_MS);
+    return this.scoped.inTenant(tenantId, async (tx) => {
+      const rows = await tx.roleAssignment.findMany({
+        where: { AND: [{ tenantId, expiresAt: { lte: windowEnd } }, activeAssignmentWhere(now), window.after] },
+        include: ASSIGNMENT_INCLUDE,
+        orderBy: window.orderBy,
+        take: window.take,
+      });
+      const enabled = await enabledApplications(tx, tenantId, rows.map((row) => row.applicationId));
+      return { asOf: now, withinDays, windowEnd, ...toExpiryPage(rows, window.limit, enabled, now) };
+    });
+  }
+
+  /** Expired Role Assignments (expiry passed, never revoked), most recently expired first. */
+  async expired(tenantId: string, query: PageQuery): Promise<ExpiryReportPage> {
+    const window = expiryWindow(query, 'desc');
+    const now = new Date();
+    return this.scoped.inTenant(tenantId, async (tx) => {
+      const rows = await tx.roleAssignment.findMany({
+        where: { AND: [{ tenantId }, statusWhere('expired', now), window.after] },
+        include: ASSIGNMENT_INCLUDE,
+        orderBy: window.orderBy,
+        take: window.take,
+      });
+      const enabled = await enabledApplications(tx, tenantId, rows.map((row) => row.applicationId));
+      return { asOf: now, ...toExpiryPage(rows, window.limit, enabled, now) };
     });
   }
 

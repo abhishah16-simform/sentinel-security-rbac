@@ -432,6 +432,9 @@ model RoleAssignment {
   revokedByUserId  String?                  @db.Uuid
   /// Set together with revokedAt.
   endReason        RoleAssignmentEndReason?
+  /// When the Scheduler marked this Temporary Role Assignment as expired and recorded that in the
+  /// Audit Log. Access never depends on it: past expiresAt the row gives no access either way.
+  expiryRecordedAt DateTime?
   createdAt        DateTime                 @default(now())
 
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -445,6 +448,8 @@ model RoleAssignment {
   @@index([tenantId, createdAt])
   /// Access Reviews snapshot the active assignments of one Application.
   @@index([tenantId, applicationId])
+  /// The expiry report and the Scheduler's expiry job.
+  @@index([tenantId, expiresAt])
   @@index([membershipId])
   @@index([roleId])
   @@map("role_assignments")

@@ -1555,6 +1555,12 @@ select:focus {
   line-height: 1.35;
 }
 
+/* A badge on its own line under a cell's text, as wide as its label. */
+.event-type > .badge.below {
+  justify-self: start;
+  margin-top: 4px;
+}
+
 .event-type small,
 .mono {
   color: var(--muted);

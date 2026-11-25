@@ -1,0 +1,45 @@
+# Scheduler and expiry report (ticket 14).
+# Needs a Tenant Admin access token with an Active Tenant (see http/tenants.http) and some Temporary
+# Role Assignments (see http/role-assignments.http).
+
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token
+@membershipId = paste-membership-id
+@roleId = paste-role-id
+
+### A Temporary Role Assignment that expires in a minute or two (edit expiresAt to just ahead of now).
+### It stops giving access at exactly expiresAt. Within a minute after that, the Scheduler's cron job
+### sets expiryRecordedAt and writes role_assignment.expired to the Tenant's Audit Log chain.
+POST {{baseUrl}}/v1/tenants/current/role-assignments
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "membershipId": "{{membershipId}}", "roleId": "{{roleId}}", "expiresAt": "2026-11-25T05:00:00Z" }
+
+### Expiring soon: active Temporary Role Assignments expiring within the next 7 days (the default),
+### soonest first. Response: { asOf, withinDays, windowEnd, items, nextCursor }.
+GET {{baseUrl}}/v1/tenants/current/reports/expiring-role-assignments
+Authorization: Bearer {{tenantToken}}
+
+### A longer look-ahead window: withinDays is 1 to 365 (400 otherwise). Paginated: limit, cursor.
+GET {{baseUrl}}/v1/tenants/current/reports/expiring-role-assignments?withinDays=30&limit=2
+Authorization: Bearer {{tenantToken}}
+
+### 400: outside the window's range
+GET {{baseUrl}}/v1/tenants/current/reports/expiring-role-assignments?withinDays=0
+Authorization: Bearer {{tenantToken}}
+
+### Expired: past expiresAt and never revoked, most recently expired first. expiryRecordedAt is
+### null until the cron job has marked it; it gives no access either way.
+### Response: { asOf, items, nextCursor }.
+GET {{baseUrl}}/v1/tenants/current/reports/expired-role-assignments
+Authorization: Bearer {{tenantToken}}
+
+### What the cron job wrote: no actor, the User as target, expiresAt in the payload. Running the job
+### again adds nothing: each assignment is marked and recorded once.
+GET {{baseUrl}}/v1/audit-events?eventType=role_assignment.expired
+Authorization: Bearer {{tenantToken}}
+
+### The chain still verifies with the Scheduler's entries in it.
+GET {{baseUrl}}/v1/audit-events/integrity
+Authorization: Bearer {{tenantToken}}

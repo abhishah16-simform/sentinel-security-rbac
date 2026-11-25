@@ -56,13 +56,13 @@ export interface AuditedAssignment {
 
 /**
  * Writes a role_assignment.* entry in the Tenant's chain, targeting the User so the Audit Log's user
- * filter finds it.
+ * filter finds it. actorUserId is null when Sentinel itself made the change (the Scheduler).
  */
 export function recordAssignmentEvent(
   tx: ScopedTransaction,
   audit: AuditLog,
   eventType: Extract<AuditEventType, `role_assignment.${string}`>,
-  actorUserId: string,
+  actorUserId: string | null,
   assignment: AuditedAssignment,
   payload: AuditPayload,
 ): Promise<void> {

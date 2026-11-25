@@ -41,3 +41,10 @@ export class RoleAssignmentListQuery extends PageQuery {
   @IsIn(ROLE_ASSIGNMENT_STATUSES)
   status?: RoleAssignmentStatus;
 }
+
+export class ExpiringReportQuery extends PageQuery {
+  /** The look-ahead window in whole days, 1 to 365 (default 7). */
+  @IsOptional()
+  @Matches(/^\d{1,3}$/, { message: 'withinDays must be a whole number' })
+  withinDays?: string;
+}
