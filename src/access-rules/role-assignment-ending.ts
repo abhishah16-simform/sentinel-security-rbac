@@ -1,8 +1,9 @@
 import type { Prisma, RoleAssignmentEndReason } from '@prisma/client';
-import { resolveReviewItemsAsRevoked } from '../access-reviews/review-item-resolution';
 import type { AuditEventType } from '../audit/audit-event-types';
 import type { AuditLog, AuditPayload } from '../audit/audit-log.service';
 import type { ScopedTransaction } from '../prisma/scoped-prisma';
+import type { RoleAssignmentStatus } from './dto/role-assignment.dto';
+import { resolveReviewItemsAsRevoked } from './review-item-resolution';
 
 /**
  * Role Assignments that give access at `now`: not revoked, and with no expiry time or one later than
@@ -29,6 +30,12 @@ export function isActiveAt(
   now: Date,
 ): boolean {
   return row.revokedAt === null && row.membershipId !== null && row.roleId !== null && (row.expiresAt === null || row.expiresAt > now);
+}
+
+/** active gives access now; expired and revoked never do again. */
+export function assignmentStatus(row: { readonly revokedAt: Date | null; readonly expiresAt: Date | null }, now: Date): RoleAssignmentStatus {
+  if (row.revokedAt !== null) return 'revoked';
+  return row.expiresAt !== null && row.expiresAt <= now ? 'expired' : 'active';
 }
 
 /** What the rows to end belong to: one Role (being deleted) or one Membership (being removed). */
@@ -104,6 +111,37 @@ export function recordAssignmentEvent(
       ...payload,
     },
   });
+}
+
+/** A loaded Role Assignment, with what revoking and auditing it needs. */
+export type RevocableAssignment = Parameters<typeof toAuditedAssignment>[0] & {
+  readonly revokedAt: Date | null;
+  readonly expiresAt: Date | null;
+  readonly roleId: string | null;
+};
+
+/**
+ * Revokes one Role Assignment if it still gives access, and records role_assignment.revoked with the
+ * reason and any extra payload. actorUserId is null when the Scheduler revokes it. Returns whether it
+ * revoked anything: an expired or already revoked one is left as it is. The caller holds the Tenant
+ * lock and resolves review items itself.
+ */
+export async function revokeIfActive(
+  tx: ScopedTransaction,
+  audit: AuditLog,
+  assignment: RevocableAssignment,
+  now: Date,
+  actorUserId: string | null,
+  reason: RoleAssignmentEndReason,
+  payload: AuditPayload,
+): Promise<boolean> {
+  if (!isActiveAt(assignment, now)) return false;
+  await tx.roleAssignment.update({ where: { id: assignment.id }, data: revocationData(now, actorUserId, reason) });
+  await recordAssignmentEvent(tx, audit, 'role_assignment.revoked', actorUserId, toAuditedAssignment(assignment), {
+    reason: END_REASON_LABELS[reason],
+    ...payload,
+  });
+  return true;
 }
 
 /**

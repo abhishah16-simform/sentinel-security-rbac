@@ -1,17 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  END_REASON_LABELS,
-  isActiveAt,
-  recordAssignmentEvent,
-  revocationData,
-  toAuditedAssignment,
-} from '../access-rules/role-assignment-ending';
+import type { Prisma } from '@prisma/client';
+import { recordItemEvent } from '../access-rules/review-item-resolution';
+import { revokeIfActive } from '../access-rules/role-assignment-ending';
 import { lockTenant } from '../access-rules/tenant-lock';
 import { AuditLog } from '../audit/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma } from '../prisma/scoped-prisma';
 import { reviewProgress } from './access-reviews.service';
-import { recordItemEvent } from './review-item-resolution';
 
 /** Tenants read per query while walking the Tenant list. */
 const TENANT_BATCH = 500;
@@ -69,47 +64,40 @@ export class AccessReviewClosing {
   private async closeDue(tenantId: string): Promise<number> {
     let closed = 0;
     for (;;) {
-      const step = await this.step(tenantId);
-      if (step === 'none') return closed;
-      if (step === 'closed') closed += 1;
+      const result = await this.closeNextBatch(tenantId);
+      if (result === 'nothing-due') return closed;
+      if (result === 'closed') closed += 1;
     }
   }
 
   /**
-   * Auto-revokes one batch of the oldest due review's undecided items, and closes it once none are
-   * left. 'none' when nothing in the Tenant is due.
+   * Auto-revokes one batch of the oldest due review's undecided items ('batch-revoked'), or closes it
+   * once none are left ('closed'). 'nothing-due' when no open review in the Tenant is past its due date.
    */
-  private step(tenantId: string): Promise<'none' | 'revoked' | 'closed'> {
+  private closeNextBatch(tenantId: string): Promise<'nothing-due' | 'batch-revoked' | 'closed'> {
     return this.scoped.inTenant(tenantId, async (tx) => {
-      const dueWhere = { tenantId, status: 'OPEN' as const, dueAt: { lte: new Date() } };
+      const dueWhere = (now: Date): Prisma.AccessReviewWhereInput => ({ tenantId, status: 'OPEN', dueAt: { lte: now } });
       // Most runs find nothing; only lock the Tenant when there is work to do.
-      if (!(await tx.accessReview.findFirst({ where: dueWhere, select: { id: true } }))) return 'none';
+      if (!(await tx.accessReview.findFirst({ where: dueWhere(new Date()), select: { id: true } }))) return 'nothing-due';
       // The same lock as every decision and revoke, so none of them races this, and a second run
       // waiting here finds the items already decided.
       await lockTenant(tx, tenantId);
       const now = new Date();
       const review = await tx.accessReview.findFirst({
-        where: { ...dueWhere, dueAt: { lte: now } },
+        where: dueWhere(now),
         include: { application: { select: { name: true } } },
         orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
       });
-      if (!review) return 'none';
+      if (!review) return 'nothing-due';
       const pending = await tx.accessReviewItem.findMany({
         where: { tenantId, reviewId: review.id, outcome: null },
         include: { roleAssignment: { include: { role: { select: { name: true } }, application: { select: { name: true } } } } },
         orderBy: { position: 'asc' },
         take: ITEM_BATCH,
       });
+      // An expired or already revoked one gives no access; it is recorded as auto-revoked all the same.
       for (const item of pending) {
-        const assignment = item.roleAssignment;
-        // An expired one already gives no access; it is recorded as auto-revoked all the same.
-        if (isActiveAt(assignment, now)) {
-          await tx.roleAssignment.update({ where: { id: assignment.id }, data: revocationData(now, null, 'AUTO_REVOKED') });
-          await recordAssignmentEvent(tx, this.audit, 'role_assignment.revoked', null, toAuditedAssignment(assignment), {
-            reason: END_REASON_LABELS.AUTO_REVOKED,
-            accessReviewId: review.id,
-          });
-        }
+        await revokeIfActive(tx, this.audit, item.roleAssignment, now, null, 'AUTO_REVOKED', { accessReviewId: review.id });
       }
       if (pending.length > 0) {
         await tx.accessReviewItem.updateMany({
@@ -118,7 +106,7 @@ export class AccessReviewClosing {
         });
         for (const item of pending) await recordItemEvent(tx, this.audit, 'access_review.item_auto_revoked', null, item);
       }
-      if (pending.length === ITEM_BATCH) return 'revoked';
+      if (pending.length === ITEM_BATCH) return 'batch-revoked';
 
       await tx.accessReview.update({ where: { id: review.id }, data: { status: 'CLOSED', closedAt: now } });
       const progress = (await reviewProgress(tx, tenantId, [review.id])).get(review.id);

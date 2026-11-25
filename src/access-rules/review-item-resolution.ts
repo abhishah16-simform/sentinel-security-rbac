@@ -50,10 +50,12 @@ export function recordItemEvent(
 
 /**
  * Records undecided items for these Role Assignments in open Access Reviews as revoked by the actor,
- * once the assignments themselves have been revoked. Every path that revokes a Role Assignment calls
+ * once the assignments themselves have been revoked. A review past its due date is left alone: its
+ * undecided items are auto-revoked by the Scheduler, however soon after the due date it runs. Every path that revokes a Role Assignment calls
  * it in the same transaction (after locking the Tenant), so revoking from the Role Assignments page or
  * the per-Registered-Resource view decides the review item as well, and a review never asks about
- * access that is already gone.
+ * access that is already gone. Lives with the Role Assignment code so every revoke path can reach it
+ * without access-rules depending on the access-reviews module.
  */
 export async function resolveReviewItemsAsRevoked(
   tx: ScopedTransaction,
@@ -65,7 +67,7 @@ export async function resolveReviewItemsAsRevoked(
 ): Promise<void> {
   if (roleAssignmentIds.length === 0) return;
   const items = await tx.accessReviewItem.findMany({
-    where: { tenantId, roleAssignmentId: { in: [...roleAssignmentIds] }, outcome: null, review: { status: 'OPEN' } },
+    where: { tenantId, roleAssignmentId: { in: [...roleAssignmentIds] }, outcome: null, review: { status: 'OPEN', dueAt: { gt: now } } },
     include: ITEM_AUDIT_INCLUDE,
     orderBy: [{ reviewId: 'asc' }, { position: 'asc' }],
   });

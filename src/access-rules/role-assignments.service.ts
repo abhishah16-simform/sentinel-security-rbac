@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { resolveReviewItemsAsRevoked } from '../access-reviews/review-item-resolution';
 import { loadSchemaIndexes, SchemaIndex } from '../applications/schema-index';
 import { AuditLog } from '../audit/audit-log.service';
 import {
@@ -14,8 +13,10 @@ import {
 } from '../common/pagination';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 import type { ExpiringReportQuery, RoleAssignmentListQuery, RoleAssignmentStatus } from './dto/role-assignment.dto';
+import { resolveReviewItemsAsRevoked } from './review-item-resolution';
 import {
   activeAssignmentWhere,
+  assignmentStatus,
   END_REASON_LABELS,
   type EndReasonLabel,
   recordAssignmentEvent,
@@ -152,11 +153,6 @@ function toMember(row: { readonly membershipId: string | null; readonly userId: 
   };
 }
 
-function statusOf(row: { readonly revokedAt: Date | null; readonly expiresAt: Date | null }, now: Date): RoleAssignmentStatus {
-  if (row.revokedAt !== null) return 'revoked';
-  return row.expiresAt !== null && row.expiresAt <= now ? 'expired' : 'active';
-}
-
 function statusWhere(status: RoleAssignmentStatus | undefined, now: Date): Prisma.RoleAssignmentWhereInput {
   switch (status) {
     case 'active':
@@ -173,7 +169,7 @@ function statusWhere(status: RoleAssignmentStatus | undefined, now: Date): Prism
 function toView(row: AssignmentRow, enabled: ReadonlySet<string>, now: Date): RoleAssignmentView {
   return {
     id: row.id,
-    status: statusOf(row, now),
+    status: assignmentStatus(row, now),
     member: toMember(row),
     role: { id: row.role?.id ?? null, name: row.role?.name ?? row.roleName },
     application: { id: row.application.id, name: row.application.name, enabled: enabled.has(row.applicationId) },
@@ -369,7 +365,7 @@ export class RoleAssignmentsService {
       await lockTenant(tx, tenantId);
       const now = new Date();
       const row = await this.findIn(tx, tenantId, assignmentId);
-      const status = statusOf(row, now);
+      const status = assignmentStatus(row, now);
       if (status === 'revoked') throw new ConflictException('This Role Assignment is already revoked');
       if (status === 'expired') throw new ConflictException('This Role Assignment has already expired and gives no access');
       await tx.roleAssignment.update({ where: { id: row.id }, data: revocationData(now, actorUserId, 'REVOKED') });

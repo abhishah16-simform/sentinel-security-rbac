@@ -1,13 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AccessReviewOutcome, AccessReviewStatus, Prisma } from '@prisma/client';
-import {
-  activeAssignmentWhere,
-  END_REASON_LABELS,
-  isActiveAt,
-  recordAssignmentEvent,
-  revocationData,
-  toAuditedAssignment,
-} from '../access-rules/role-assignment-ending';
+import { recordItemEvent, resolveReviewItemsAsRevoked } from '../access-rules/review-item-resolution';
+import { activeAssignmentWhere, assignmentStatus, isActiveAt, revokeIfActive } from '../access-rules/role-assignment-ending';
 import { lockTenant } from '../access-rules/tenant-lock';
 import { AuditLog } from '../audit/audit-log.service';
 import { type Page, pageSize, pageWindow, toPage } from '../common/pagination';
@@ -19,7 +13,6 @@ import type {
   ReviewItemOutcomeLabel,
   StartAccessReviewDto,
 } from './dto/access-review.dto';
-import { recordItemEvent, resolveReviewItemsAsRevoked } from './review-item-resolution';
 
 /** How far ahead a due date may be. */
 const MAX_DUE_DAYS = 365;
@@ -76,11 +69,17 @@ export interface AccessReviewItemView {
   readonly decidedByName: string | null;
 }
 
-const OUTCOME_LABELS = {
-  CERTIFIED: 'certified',
-  REVOKED: 'revoked',
-  AUTO_REVOKED: 'auto-revoked',
-} as const satisfies Record<AccessReviewOutcome, ReviewItemOutcomeLabel>;
+/** The counts as they are added up. */
+type ProgressCounts = { -readonly [K in keyof ReviewProgress]: number };
+
+/** Each stored outcome's API label and the progress count it adds to: the one map between them. */
+const OUTCOMES = {
+  CERTIFIED: { label: 'certified', counter: 'certified' },
+  REVOKED: { label: 'revoked', counter: 'revoked' },
+  AUTO_REVOKED: { label: 'auto-revoked', counter: 'autoRevoked' },
+} as const satisfies Record<AccessReviewOutcome, { label: ReviewItemOutcomeLabel; counter: keyof ProgressCounts }>;
+
+const OUTCOME_VALUES = ['CERTIFIED', 'REVOKED', 'AUTO_REVOKED'] as const satisfies readonly AccessReviewOutcome[];
 
 const STATUS_LABELS = { OPEN: 'open', CLOSED: 'closed' } as const satisfies Record<AccessReviewStatus, AccessReviewStatusLabel>;
 
@@ -127,7 +126,7 @@ function displayName(user: UserName | null): string | null {
   return [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
 }
 
-function emptyProgress(): { total: number; pending: number; certified: number; revoked: number; autoRevoked: number } {
+function emptyProgress(): ProgressCounts {
   return { total: 0, pending: 0, certified: 0, revoked: 0, autoRevoked: 0 };
 }
 
@@ -147,9 +146,6 @@ function toReviewView(row: ReviewRow, progress: ReviewProgress, now: Date): Acce
 
 function toItemView(row: ItemRow, now: Date): AccessReviewItemView {
   const assignment = row.roleAssignment;
-  let status: AccessReviewItemView['roleAssignment']['status'] = 'active';
-  if (assignment.revokedAt !== null) status = 'revoked';
-  else if (assignment.expiresAt !== null && assignment.expiresAt <= now) status = 'expired';
   return {
     id: row.id,
     reviewId: row.reviewId,
@@ -163,30 +159,21 @@ function toItemView(row: ItemRow, now: Date): AccessReviewItemView {
     role: { id: assignment.role?.id ?? null, name: assignment.role?.name ?? assignment.roleName },
     roleAssignment: {
       id: assignment.id,
-      status,
+      status: assignmentStatus(assignment, now),
       expiresAt: assignment.expiresAt,
       createdAt: assignment.createdAt,
       assignedByName: displayName(assignment.assignedBy),
     },
-    outcome: row.outcome === null ? 'pending' : OUTCOME_LABELS[row.outcome],
+    outcome: row.outcome === null ? 'pending' : OUTCOMES[row.outcome].label,
     decidedAt: row.decidedAt,
     decidedByName: displayName(row.decidedBy),
   };
 }
 
 function outcomeWhere(outcome: ReviewItemOutcomeLabel | undefined): Prisma.AccessReviewItemWhereInput {
-  switch (outcome) {
-    case undefined:
-      return {};
-    case 'pending':
-      return { outcome: null };
-    case 'certified':
-      return { outcome: 'CERTIFIED' };
-    case 'revoked':
-      return { outcome: 'REVOKED' };
-    case 'auto-revoked':
-      return { outcome: 'AUTO_REVOKED' };
-  }
+  if (outcome === undefined) return {};
+  if (outcome === 'pending') return { outcome: null };
+  return { outcome: OUTCOME_VALUES.find((value) => OUTCOMES[value].label === outcome) };
 }
 
 /** Items are paged by their position in the review; the cursor is the last position shown. */
@@ -213,7 +200,7 @@ export async function reviewProgress(
   tenantId: string,
   reviewIds: readonly string[],
 ): Promise<ReadonlyMap<string, ReviewProgress>> {
-  const progress = new Map<string, ReturnType<typeof emptyProgress>>();
+  const progress = new Map<string, ProgressCounts>();
   for (const id of reviewIds) progress.set(id, emptyProgress());
   if (reviewIds.length === 0) return progress;
   const groups = await tx.accessReviewItem.groupBy({
@@ -226,10 +213,7 @@ export async function reviewProgress(
     if (!entry) continue;
     const count = group._count._all;
     entry.total += count;
-    if (group.outcome === null) entry.pending += count;
-    else if (group.outcome === 'CERTIFIED') entry.certified += count;
-    else if (group.outcome === 'REVOKED') entry.revoked += count;
-    else entry.autoRevoked += count;
+    entry[group.outcome === null ? 'pending' : OUTCOMES[group.outcome].counter] += count;
   }
   return progress;
 }
@@ -389,16 +373,9 @@ export class AccessReviewsService {
   /** Ends the Role Assignment at once (if it still gives access) and records the item as revoked. */
   revoke(tenantId: string, actorUserId: string, reviewId: string, itemId: string): Promise<AccessReviewItemView> {
     return this.decide(tenantId, reviewId, itemId, async (tx, item, now) => {
-      const assignment = item.roleAssignment;
-      if (isActiveAt(assignment, now)) {
-        await tx.roleAssignment.update({ where: { id: assignment.id }, data: revocationData(now, actorUserId, 'REVOKED') });
-        await recordAssignmentEvent(tx, this.audit, 'role_assignment.revoked', actorUserId, toAuditedAssignment(assignment), {
-          reason: END_REASON_LABELS.REVOKED,
-          accessReviewId: item.reviewId,
-        });
-      }
+      await revokeIfActive(tx, this.audit, item.roleAssignment, now, actorUserId, 'REVOKED', { accessReviewId: item.reviewId });
       // The same path as a revoke from anywhere else, so the item is decided in one place.
-      await resolveReviewItemsAsRevoked(tx, this.audit, tenantId, [assignment.id], actorUserId, now);
+      await resolveReviewItemsAsRevoked(tx, this.audit, tenantId, [item.roleAssignment.id], actorUserId, now);
     });
   }
 
@@ -425,7 +402,7 @@ export class AccessReviewsService {
         throw new ConflictException('This Access Review is past its due date: undecided items are being revoked automatically');
       }
       if (item.outcome !== null) {
-        throw new ConflictException(`This item has already been decided (${OUTCOME_LABELS[item.outcome]})`);
+        throw new ConflictException(`This item has already been decided (${OUTCOMES[item.outcome].label})`);
       }
       await decision(tx, item, now);
       const row = await tx.accessReviewItem.findUniqueOrThrow({ where: { id: item.id }, include: ITEM_INCLUDE });
