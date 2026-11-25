@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { Membership, Prisma } from '@prisma/client';
 import { endRoleAssignments } from '../access-rules/role-assignment-ending';
 import type { AuditEventType } from '../audit/audit-event-types';
-import { AuditLog } from '../audit/audit-log.service';
+import { AuditLog, type AuditPayload } from '../audit/audit-log.service';
 import { type Page, type PageQuery, pageWindow, toPage } from '../common/pagination';
 import { ScopedPrisma, type ScopedTransaction } from '../prisma/scoped-prisma';
 
@@ -80,7 +80,7 @@ export class MembershipsService {
       await assertAnotherAdmin(tx, membership);
       await this.endIn(tx, membership, actorUserId);
       const eventType = membership.userId === actorUserId ? 'membership.left' : 'membership.removed';
-      await this.recordIn(tx, membership, eventType, actorUserId);
+      await this.recordIn(tx, membership, eventType, actorUserId, { wasTenantAdmin: membership.isTenantAdmin });
     });
   }
 
@@ -112,7 +112,7 @@ export class MembershipsService {
       if (!membership) throw new NotFoundException('You are not a member of that Tenant.');
       await assertAnotherAdmin(tx, membership);
       await this.endIn(tx, membership, userId);
-      await this.recordIn(tx, membership, 'membership.left', userId);
+      await this.recordIn(tx, membership, 'membership.left', userId, { wasTenantAdmin: membership.isTenantAdmin });
     });
   }
 
@@ -131,13 +131,20 @@ export class MembershipsService {
     return membership;
   }
 
-  private recordIn(tx: ScopedTransaction, membership: Membership, eventType: AuditEventType, actorUserId: string): Promise<void> {
+  /** Extra payload, such as wasTenantAdmin on an ended Membership, which the Security Alert rules read. */
+  private recordIn(
+    tx: ScopedTransaction,
+    membership: Membership,
+    eventType: AuditEventType,
+    actorUserId: string,
+    extra: AuditPayload = {},
+  ): Promise<void> {
     return this.audit.recordIn(tx, {
       tenantId: membership.tenantId,
       eventType,
       actorUserId,
       target: { type: 'user', id: membership.userId },
-      payload: { membershipId: membership.id },
+      payload: { membershipId: membership.id, ...extra },
     });
   }
 }

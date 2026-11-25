@@ -68,6 +68,10 @@
       case 'access-check-denials-spike':
         return 'At least ' + details.deniedChecks + ' denied Access Checks within ' + details.windowMinutes + ' minutes';
       case 'tenant-admin-changed':
+        if (details.membershipEnded === 'left') return 'A Tenant Admin left the Tenant';
+        if (details.membershipEnded === 'removed') {
+          return 'A Tenant Admin\'s Membership was removed' + (alert.actor ? ' by ' + alert.actor.name : '');
+        }
         return (details.granted ? 'Made a Tenant Admin' : 'No longer a Tenant Admin') + (alert.actor ? ' by ' + alert.actor.name : '');
       default:
         return '';

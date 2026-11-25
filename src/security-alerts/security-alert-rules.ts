@@ -3,11 +3,19 @@ import type { AuditEventType } from '../audit/audit-event-types';
 import { type ScopedTransaction, setTenantContext, setUserContext } from '../prisma/scoped-prisma';
 
 /** 5 or more failed logins for one User within 15 minutes. */
-export const FAILED_LOGIN_THRESHOLD = 5;
-export const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const FAILED_LOGIN_THRESHOLD = 5;
+const FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1000;
 /** At least 50 denied Access Checks for one Application in one Tenant within 5 minutes. */
-export const DENIED_CHECK_THRESHOLD = 50;
-export const DENIED_CHECK_WINDOW_MS = 5 * 60 * 1000;
+const DENIED_CHECK_THRESHOLD = 50;
+const DENIED_CHECK_WINDOW_MS = 5 * 60 * 1000;
+
+/** The email-code purpose (EmailChallenges) of the code that finishes an MFA login. */
+const MFA_LOGIN_PURPOSE = 'mfa-login';
+/**
+ * Reasons on a failed login or code entry for an attempt refused before any password or code was
+ * checked, because another check for the account was still running. They aren't guesses.
+ */
+const NOT_CHECKED_REASONS: readonly unknown[] = ['busy', 'attempt-in-progress'];
 
 /** An Audit Log entry as just written, which the rules look at. */
 export interface WrittenAuditEvent {
@@ -39,6 +47,10 @@ interface MembershipTenant {
   readonly tenantId: string;
 }
 
+interface Setting {
+  readonly value: string | null;
+}
+
 /**
  * The fixed Security Alert rules, run by AuditLog for every entry it writes, inside the writer's
  * transaction so an alert commits or rolls back with the entry that raised it. Raising an alert
@@ -59,15 +71,18 @@ export async function runSecurityAlertRules(tx: ScopedTransaction, event: Writte
       return deniedCheckSpike(tx, event);
     case 'membership.admin_granted':
     case 'membership.admin_revoked':
+    case 'membership.removed':
+    case 'membership.left':
       return tenantAdminChanged(tx, event);
     default:
       return;
   }
 }
 
-/** A wrong password, or a wrong or unusable code while finishing an MFA login. */
+/** A wrong password, or a wrong or unusable code while finishing an MFA login; not a refused attempt. */
 function isFailedLogin(event: WrittenAuditEvent): boolean {
-  return event.eventType === 'auth.login_failed' || event.payload['purpose'] === 'mfa-login';
+  if (NOT_CHECKED_REASONS.includes(event.payload['reason'])) return false;
+  return event.eventType === 'auth.login_failed' || event.payload['purpose'] === MFA_LOGIN_PURPOSE;
 }
 
 /**
@@ -86,15 +101,18 @@ async function repeatedFailedLogins(tx: ScopedTransaction, event: WrittenAuditEv
     SELECT count(*)::int AS count FROM audit_events
     WHERE "tenantId" IS NULL AND "actorUserId" = ${userId}::uuid AND "createdAt" > ${utc(since)}
       AND ("eventType" = 'auth.login_failed'
-        OR ("eventType" = 'auth.email_code_failed' AND payload->>'purpose' = 'mfa-login'))`;
+        OR ("eventType" = 'auth.email_code_failed' AND payload->>'purpose' = ${MFA_LOGIN_PURPOSE}))
+      AND coalesce(payload->>'reason', '') NOT IN ('busy', 'attempt-in-progress')`;
   const count = failures?.count ?? 0;
   if (count < FAILED_LOGIN_THRESHOLD) return;
 
-  // The User's own Memberships in every Tenant, through the own_memberships policy.
+  // The User's own Memberships in every Tenant, through the own_memberships policy, as asUser()
+  // would read them; the caller's User context is put back afterwards.
+  const [previous] = await tx.$queryRaw<Setting[]>`SELECT current_setting('app.user_id', true) AS value`;
   await setUserContext(tx, userId);
   const memberships = await tx.$queryRaw<MembershipTenant[]>`
     SELECT "tenantId" FROM memberships WHERE "userId" = ${userId}::uuid`;
-  await setUserContext(tx, '');
+  await setUserContext(tx, previous?.value ?? '');
 
   for (const { tenantId } of memberships) {
     await setTenantContext(tx, tenantId);
@@ -110,7 +128,10 @@ async function repeatedFailedLogins(tx: ScopedTransaction, event: WrittenAuditEv
   }
 }
 
-/** Raised in the Tenant the reused token's login had chosen; none if it hadn't chosen one yet. */
+/**
+ * Raised in the Tenant recorded in the reused token (the entry's Tenant), even if the login has since
+ * switched or dropped it; none if the token was issued before a Tenant was chosen.
+ */
 async function refreshTokenReused(tx: ScopedTransaction, event: WrittenAuditEvent): Promise<void> {
   if (event.tenantId === null) return;
   await raise(tx, event, event.tenantId, 'REFRESH_TOKEN_REUSED', {
@@ -153,20 +174,28 @@ async function deniedCheckSpike(tx: ScopedTransaction, event: WrittenAuditEvent)
   });
 }
 
-/** Raised for every change of the flag, naming the member and the Tenant Admin who changed it. */
+/**
+ * Raised for every change of the flag, naming the member and who changed it: given or removed, or
+ * gone with a Tenant Admin's Membership when it is removed or they leave (membershipEnded).
+ */
 async function tenantAdminChanged(tx: ScopedTransaction, event: WrittenAuditEvent): Promise<void> {
   if (event.tenantId === null) return;
+  const ended = event.eventType === 'membership.removed' || event.eventType === 'membership.left';
+  if (ended && event.payload['wasTenantAdmin'] !== true) return;
   await raise(tx, event, event.tenantId, 'TENANT_ADMIN_CHANGED', {
     subjectUserId: event.targetType === 'user' ? event.targetId : null,
     actorUserId: event.actorUserId,
-    details: { granted: event.eventType === 'membership.admin_granted' },
+    details: {
+      granted: event.eventType === 'membership.admin_granted',
+      ...(ended ? { membershipEnded: event.eventType === 'membership.left' ? 'left' : 'removed' } : {}),
+    },
   });
 }
 
 interface AlertFields {
   readonly subjectUserId?: string | null;
   readonly actorUserId?: string | null;
-  readonly applicationId?: string;
+  readonly applicationId?: string | null;
   readonly details: Prisma.InputJsonObject;
 }
 

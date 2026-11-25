@@ -136,14 +136,18 @@ model RefreshChain {
 /// An opaque refresh token. Only its SHA-256 hash is stored. It works once:
 /// using it sets usedAt and issues the next token in the same chain.
 model RefreshToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  chainId   String    @db.Uuid
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  id             String    @id @default(uuid()) @db.Uuid
+  chainId        String    @db.Uuid
+  tokenHash      String    @unique
+  /// The login's Active Tenant when this token was issued, kept even after the login switches or
+  /// drops it: a reused token raises its Security Alert there. Not named tenantId (platform-level table).
+  activeTenantId String?   @db.Uuid
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
 
-  chain RefreshChain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  chain        RefreshChain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+  activeTenant Tenant?      @relation(fields: [activeTenantId], references: [id], onDelete: SetNull)
 
   @@index([chainId])
   @@map("refresh_tokens")
@@ -169,6 +173,7 @@ model Tenant {
   memberships         Membership[]
   invitations         Invitation[]
   refreshChains       RefreshChain[]
+  refreshTokens       RefreshToken[]
   auditEvents         AuditEvent[]
   enablements         Enablement[]
   roles               Role[]

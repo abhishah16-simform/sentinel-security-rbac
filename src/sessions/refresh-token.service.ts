@@ -71,7 +71,7 @@ export class RefreshTokenService {
   ): Promise<IssuedRefreshToken> {
     const chain = await tx.refreshChain.create({ data: { userId } });
     await this.audit.recordIn(tx, sessionEvent(chain, null, 'auth.login_succeeded', { mfa }));
-    return this.issueInChain(tx, chain.id);
+    return this.issueInChain(tx, chain.id, null);
   }
 
   /**
@@ -108,7 +108,9 @@ export class RefreshTokenService {
       const now = new Date();
       if (current.usedAt !== null) {
         await this.revokeChains(tx, { id: chain.id }, now);
-        await this.audit.recordIn(tx, sessionEvent(chain, chain.activeTenantId, 'auth.refresh_token_reused'));
+        // The Tenant recorded in the reused token, not the login's current one: the token may predate a
+        // switch, or the login may since have dropped a suspended Tenant.
+        await this.audit.recordIn(tx, sessionEvent(chain, current.activeTenantId, 'auth.refresh_token_reused'));
         return { kind: 'reused', userId: chain.userId, chainId: chain.id };
       }
       if (current.expiresAt <= now) return { kind: 'rejected' };
@@ -141,7 +143,8 @@ export class RefreshTokenService {
           }),
         );
       }
-      return { kind: 'rotated', userId: chain.userId, activeTenant, next: await this.issueInChain(tx, chain.id) };
+      const next = await this.issueInChain(tx, chain.id, activeTenant?.tenantId ?? null);
+      return { kind: 'rotated', userId: chain.userId, activeTenant, next };
     });
 
     if (result.kind === 'reused') {
@@ -189,10 +192,11 @@ export class RefreshTokenService {
     });
   }
 
-  private async issueInChain(tx: ScopedTransaction, chainId: string): Promise<IssuedRefreshToken> {
+  /** Issues the chain's next token, recording the Active Tenant it is issued for (null for none). */
+  private async issueInChain(tx: ScopedTransaction, chainId: string, activeTenantId: string | null): Promise<IssuedRefreshToken> {
     const token = generateOpaqueToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
-    await tx.refreshToken.create({ data: { chainId, tokenHash: hashOpaqueToken(token), expiresAt } });
+    await tx.refreshToken.create({ data: { chainId, tokenHash: hashOpaqueToken(token), activeTenantId, expiresAt } });
     return { token, expiresAt };
   }
 
