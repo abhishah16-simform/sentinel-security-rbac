@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'node:path';
 import { AccessCheckModule } from './access-check/access-check.module';
+import { AccessReviewsModule } from './access-reviews/access-reviews.module';
 import { AccessRulesModule } from './access-rules/access-rules.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { AuditConsoleModule } from './audit/audit-console.module';
@@ -24,6 +25,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     }),
     PrismaModule,
     AccessCheckModule,
+    AccessReviewsModule,
     AccessRulesModule,
     ApplicationsModule,
     AuditConsoleModule,

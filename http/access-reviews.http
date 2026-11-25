@@ -1,0 +1,89 @@
+# Access Reviews (ticket 15).
+# Needs a Tenant Admin access token with an Active Tenant (see http/tenants.http), an enabled
+# Application with some active Role Assignments (see http/role-assignments.http), and a Registered
+# Resource of it for the per-resource view (see http/registered-resources.http).
+
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token
+@applicationId = paste-enabled-application-id
+@reviewId = paste-review-id
+@itemId = paste-item-id
+@otherItemId = paste-another-item-id
+@resourceId = paste-registered-resource-id
+@roleAssignmentId = paste-role-assignment-id-under-review
+
+### Start a review of one enabled Application, due at dueAt (with a time zone, in the future, within
+### 365 days). Every Role Assignment active in it now becomes an item. 409 if one is already open
+### for the Application, if it isn't enabled, or if nobody holds a Role in it; 404 for an unknown one.
+### Writes access_review.started.
+POST {{baseUrl}}/v1/tenants/current/access-reviews
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "applicationId": "{{applicationId}}", "dueAt": "2026-12-09T12:00:00Z" }
+
+### 400: dueAt in the past
+POST {{baseUrl}}/v1/tenants/current/access-reviews
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "applicationId": "{{applicationId}}", "dueAt": "2020-01-01T00:00:00Z" }
+
+### Reviews, newest first, each with progress { total, pending, certified, revoked, autoRevoked }.
+### Filters: status (open, closed), applicationId. Paginated: limit, cursor.
+GET {{baseUrl}}/v1/tenants/current/access-reviews?status=open
+Authorization: Bearer {{tenantToken}}
+
+### One review and its progress. pastDue is true once the due date has passed but the Scheduler
+### hasn't closed it yet.
+GET {{baseUrl}}/v1/tenants/current/access-reviews/{{reviewId}}
+Authorization: Bearer {{tenantToken}}
+
+### Its items, by member email then Role name. Each has outcome (pending, certified, revoked,
+### auto-revoked), decidedAt and decidedByName. Filter: outcome. Once closed, this is the outcome report.
+GET {{baseUrl}}/v1/tenants/current/access-reviews/{{reviewId}}/items
+Authorization: Bearer {{tenantToken}}
+
+### Only the undecided ones
+GET {{baseUrl}}/v1/tenants/current/access-reviews/{{reviewId}}/items?outcome=pending
+Authorization: Bearer {{tenantToken}}
+
+### Certify an item: its Role Assignment stays. Any Tenant Admin can decide any item. Writes
+### access_review.item_certified. 409 once decided, after the due date, or if the assignment expired.
+POST {{baseUrl}}/v1/tenants/current/access-reviews/{{reviewId}}/items/{{itemId}}/certify
+Authorization: Bearer {{tenantToken}}
+
+### 409: already decided
+POST {{baseUrl}}/v1/tenants/current/access-reviews/{{reviewId}}/items/{{itemId}}/revoke
+Authorization: Bearer {{tenantToken}}
+
+### Revoke an item: its Role Assignment ends at once (role_assignment.revoked with accessReviewId)
+### and the item is recorded as revoked (access_review.item_revoked).
+POST {{baseUrl}}/v1/tenants/current/access-reviews/{{reviewId}}/items/{{otherItemId}}/revoke
+Authorization: Bearer {{tenantToken}}
+
+### The per-Registered-Resource view: each row now lists the member's active Role Assignments in the
+### Application (assignments: { id, role, expiresAt, decidesAnswer, pendingReviewItemId }), and
+### openReview names the open review of the Application.
+GET {{baseUrl}}/v1/tenants/current/registered-resources/{{resourceId}}/access
+Authorization: Bearer {{tenantToken}}
+
+### Revoking from that view revokes the underlying Role Assignment, and decides its pending review
+### item as revoked by the same Tenant Admin. So does revoking it on the Role Assignments page,
+### deleting its Role or removing its Membership.
+POST {{baseUrl}}/v1/tenants/current/role-assignments/{{roleAssignmentId}}/revoke
+Authorization: Bearer {{tenantToken}}
+
+### At the due date: within a minute, the Scheduler revokes each undecided item's Role Assignment
+### (endReason auto-revoked, no actor), records the item as auto-revoked and closes the review.
+### To try it, start a review due a minute or two ahead and wait.
+GET {{baseUrl}}/v1/audit-events?eventType=access_review.item_auto_revoked
+Authorization: Bearer {{tenantToken}}
+
+### The closing entry carries the final counts.
+GET {{baseUrl}}/v1/audit-events?eventType=access_review.closed
+Authorization: Bearer {{tenantToken}}
+
+### The chain still verifies with every decision in it.
+GET {{baseUrl}}/v1/audit-events/integrity
+Authorization: Bearer {{tenantToken}}

@@ -44,10 +44,23 @@ export interface ReportMember {
   readonly lastName: string;
 }
 
+/** One of a member's active Role Assignments in the resource's Application, which can be revoked from the view. */
+export interface HeldAssignment {
+  readonly id: string;
+  readonly role: { readonly id: string; readonly name: string };
+  readonly expiresAt: Date | null;
+  /** True when it gives the Permission that decided at least one answer in the row. */
+  readonly decidesAnswer: boolean;
+  /** Its undecided item in the open Access Review of the Application, if any; revoking it decides that too. */
+  readonly pendingReviewItemId: string | null;
+}
+
 export interface ResourceAccessRow {
   readonly member: ReportMember;
   /** One answer per Action of the report, in the same order. */
   readonly answers: readonly ActionAnswer[];
+  /** The member's active Role Assignments in the Application, by Role name. */
+  readonly assignments: readonly HeldAssignment[];
 }
 
 /**
@@ -64,6 +77,8 @@ export interface ResourceAccessReport extends Page<ResourceAccessRow> {
   readonly deniedBecause: GateReason | null;
   /** The Roles that decided an answer on this page. */
   readonly roles: readonly { readonly id: string; readonly name: string }[];
+  /** The open Access Review of the resource's Application, if any. */
+  readonly openReview: { readonly id: string; readonly dueAt: Date } | null;
 }
 
 const RESOURCE_INCLUDE = { application: { select: { id: true, name: true } } } as const satisfies Prisma.RegisteredResourceInclude;
@@ -321,10 +336,47 @@ export class RegisteredResourcesService {
         { resourceType: row.resourceType, actions: actions.map((action) => action.name), attributes: resource.attributes },
       );
 
+      const held = await tx.roleAssignment.findMany({
+        where: {
+          tenantId,
+          applicationId: row.applicationId,
+          membershipId: { in: shown.map((membership) => membership.id) },
+          ...activeAssignmentWhere(now),
+        },
+        select: {
+          id: true,
+          membershipId: true,
+          expiresAt: true,
+          role: { select: { id: true, name: true } },
+          reviewItems: { where: { outcome: null, review: { status: 'OPEN' } }, select: { id: true } },
+        },
+      });
+
       const roleIds = new Set<string>();
       const page = toPage(memberships, window, (membership): ResourceAccessRow => {
         const memberAnswers = answers.get(membership.id) ?? [];
-        for (const answer of memberAnswers) if (answer.roleId) roleIds.add(answer.roleId);
+        const deciding = new Set<string>();
+        for (const answer of memberAnswers) {
+          if (!answer.roleId) continue;
+          roleIds.add(answer.roleId);
+          deciding.add(answer.roleId);
+        }
+        const assignments = held
+          .filter((assignment) => assignment.membershipId === membership.id)
+          .flatMap((assignment): HeldAssignment[] => {
+            // An active assignment always has its Role (activeAssignmentWhere).
+            if (!assignment.role) return [];
+            return [
+              {
+                id: assignment.id,
+                role: assignment.role,
+                expiresAt: assignment.expiresAt,
+                decidesAnswer: deciding.has(assignment.role.id),
+                pendingReviewItemId: assignment.reviewItems[0]?.id ?? null,
+              },
+            ];
+          })
+          .sort((a, b) => a.role.name.localeCompare(b.role.name));
         return {
           member: {
             membershipId: membership.id,
@@ -334,6 +386,7 @@ export class RegisteredResourcesService {
             lastName: membership.user.lastName,
           },
           answers: memberAnswers,
+          assignments,
         };
       });
       const roles = await tx.role.findMany({
@@ -341,7 +394,11 @@ export class RegisteredResourcesService {
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       });
-      return { ...page, resource, asOf: now, actions, deniedBecause, roles };
+      const openReview = await tx.accessReview.findFirst({
+        where: { tenantId, applicationId: row.applicationId, status: 'OPEN' },
+        select: { id: true, dueAt: true },
+      });
+      return { ...page, resource, asOf: now, actions, deniedBecause, roles, openReview };
     });
   }
 

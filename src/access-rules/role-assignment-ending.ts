@@ -1,4 +1,5 @@
 import type { Prisma, RoleAssignmentEndReason } from '@prisma/client';
+import { resolveReviewItemsAsRevoked } from '../access-reviews/review-item-resolution';
 import type { AuditEventType } from '../audit/audit-event-types';
 import type { AuditLog, AuditPayload } from '../audit/audit-log.service';
 import type { ScopedTransaction } from '../prisma/scoped-prisma';
@@ -22,6 +23,14 @@ export function activeAssignmentWhere(now: Date): Prisma.RoleAssignmentWhereInpu
   };
 }
 
+/** The same test as activeAssignmentWhere, for a row already loaded. */
+export function isActiveAt(
+  row: { readonly revokedAt: Date | null; readonly expiresAt: Date | null; readonly membershipId: string | null; readonly roleId: string | null },
+  now: Date,
+): boolean {
+  return row.revokedAt === null && row.membershipId !== null && row.roleId !== null && (row.expiresAt === null || row.expiresAt > now);
+}
+
 /** What the rows to end belong to: one Role (being deleted) or one Membership (being removed). */
 export type AssignmentOwner = { readonly roleId: string } | { readonly membershipId: string };
 
@@ -30,14 +39,15 @@ export const END_REASON_LABELS = {
   REVOKED: 'revoked',
   ROLE_DELETED: 'role-deleted',
   MEMBERSHIP_ENDED: 'membership-ended',
+  AUTO_REVOKED: 'auto-revoked',
 } as const satisfies Record<RoleAssignmentEndReason, string>;
 
 export type EndReasonLabel = (typeof END_REASON_LABELS)[RoleAssignmentEndReason];
 
-/** The columns that revoke a Role Assignment. */
+/** The columns that revoke a Role Assignment. actorUserId is null when the Scheduler revokes it. */
 export function revocationData(
   now: Date,
-  actorUserId: string,
+  actorUserId: string | null,
   reason: RoleAssignmentEndReason,
 ): Prisma.RoleAssignmentUncheckedUpdateManyInput {
   return { revokedAt: now, revokedByUserId: actorUserId, endReason: reason };
@@ -101,14 +111,15 @@ export function recordAssignmentEvent(
  * each one in the Tenant's chain. Every path that deletes a Role or Membership (including erasure)
  * must call it inside the deleting transaction, after locking the Tenant and before the delete, so the
  * rows stay recorded as revoked once the foreign key is set to null. Expired ones are left as they
- * are: they already give no access. Returns how many it revoked.
+ * are: they already give no access. Undecided items for them in open Access Reviews are resolved as
+ * revoked. Returns how many it revoked.
  */
 export async function endRoleAssignments(
   tx: ScopedTransaction,
   audit: AuditLog,
   tenantId: string,
   owner: AssignmentOwner,
-  reason: Exclude<RoleAssignmentEndReason, 'REVOKED'>,
+  reason: Exclude<RoleAssignmentEndReason, 'REVOKED' | 'AUTO_REVOKED'>,
   actorUserId: string,
 ): Promise<number> {
   const now = new Date();
@@ -132,5 +143,6 @@ export async function endRoleAssignments(
       { reason: END_REASON_LABELS[reason] },
     );
   }
+  await resolveReviewItemsAsRevoked(tx, audit, tenantId, ending.map((assignment) => assignment.id), actorUserId, now);
   return ending.length;
 }

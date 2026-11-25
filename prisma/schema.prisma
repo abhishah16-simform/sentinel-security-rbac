@@ -39,6 +39,8 @@ model User {
   roleAssignments         RoleAssignment[]         @relation("RoleAssignmentUser")
   roleAssignmentsMade     RoleAssignment[]         @relation("RoleAssignmentAssignedBy")
   roleAssignmentsRevoked  RoleAssignment[]         @relation("RoleAssignmentRevokedBy")
+  accessReviewsStarted    AccessReview[]
+  accessReviewDecisions   AccessReviewItem[]
 
   @@map("users")
 }
@@ -170,6 +172,8 @@ model Tenant {
   permissions         Permission[]
   roleAssignments     RoleAssignment[]
   registeredResources RegisteredResource[]
+  accessReviews       AccessReview[]
+  accessReviewItems   AccessReviewItem[]
 
   @@map("tenants")
 }
@@ -260,6 +264,7 @@ model Application {
   roles               Role[]
   roleAssignments     RoleAssignment[]
   registeredResources RegisteredResource[]
+  accessReviews       AccessReview[]
 
   @@map("applications")
 }
@@ -406,6 +411,8 @@ enum RoleAssignmentEndReason {
   ROLE_DELETED
   /// Its Membership was removed or left.
   MEMBERSHIP_ENDED
+  /// Still undecided when its Access Review reached the due date.
+  AUTO_REVOKED
 }
 
 /// Tenant-owned (RLS). A Role given to a Membership across the whole Tenant, optionally until
@@ -444,6 +451,7 @@ model RoleAssignment {
   application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
   assignedBy  User?       @relation("RoleAssignmentAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
   revokedBy   User?       @relation("RoleAssignmentRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  reviewItems AccessReviewItem[]
 
   @@index([tenantId, createdAt])
   /// Access Reviews snapshot the active assignments of one Application.
@@ -477,6 +485,77 @@ model RegisteredResource {
   @@unique([tenantId, applicationId, resourceType, resourceId])
   @@index([tenantId, createdAt])
   @@map("registered_resources")
+}
+
+// ---------------------------------------------------------------------------
+// Access Reviews (Tenant-owned: tenantId, RLS)
+// ---------------------------------------------------------------------------
+
+enum AccessReviewStatus {
+  OPEN
+  CLOSED
+}
+
+/// What became of one Access Review item. Null while it is still undecided.
+enum AccessReviewOutcome {
+  /// A Tenant Admin Certified the Role Assignment.
+  CERTIFIED
+  /// A Tenant Admin revoked the Role Assignment, from the review or anywhere else.
+  REVOKED
+  /// Still undecided at the due date: the Scheduler revoked it.
+  AUTO_REVOKED
+}
+
+/// Tenant-owned (RLS). A campaign over one Tenant and one Application in which each Role Assignment
+/// active when it started is Certified or revoked by the due date. At most one OPEN review per
+/// (tenantId, applicationId): a partial unique index in the migration.
+model AccessReview {
+  id              String             @id @default(uuid()) @db.Uuid
+  tenantId        String             @db.Uuid
+  applicationId   String             @db.Uuid
+  status          AccessReviewStatus @default(OPEN)
+  /// Decisions stop at this time; the Scheduler then auto-revokes what is left and closes it.
+  dueAt           DateTime
+  /// The Tenant Admin who started it; null once that User is gone.
+  startedByUserId String?            @db.Uuid
+  closedAt        DateTime?
+  createdAt       DateTime           @default(now())
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application Application        @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  startedBy   User?              @relation(fields: [startedByUserId], references: [id], onDelete: SetNull)
+  items       AccessReviewItem[]
+
+  @@index([tenantId, createdAt])
+  /// The Scheduler's search for open reviews past their due date.
+  @@index([tenantId, status, dueAt])
+  @@map("access_reviews")
+}
+
+/// Tenant-owned (RLS). One Role Assignment snapshotted into an Access Review when it started.
+model AccessReviewItem {
+  id               String               @id @default(uuid()) @db.Uuid
+  tenantId         String               @db.Uuid
+  reviewId         String               @db.Uuid
+  roleAssignmentId String               @db.Uuid
+  /// Order within the review (by member email, then Role name), and the list's page cursor.
+  position         Int
+  outcome          AccessReviewOutcome?
+  decidedAt        DateTime?
+  /// The Tenant Admin who decided it; null for AUTO_REVOKED, or once that User is gone.
+  decidedByUserId  String?              @db.Uuid
+  createdAt        DateTime             @default(now())
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  review         AccessReview   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  roleAssignment RoleAssignment @relation(fields: [roleAssignmentId], references: [id], onDelete: Restrict)
+  decidedBy      User?          @relation(fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([reviewId, roleAssignmentId])
+  @@unique([reviewId, position])
+  @@index([reviewId, outcome])
+  @@index([roleAssignmentId])
+  @@map("access_review_items")
 }
 
 // ---------------------------------------------------------------------------

@@ -201,6 +201,13 @@
     document.getElementById('register-hint').textContent =
       'Conditions match these attributes. Your User ID, for "ownerId"-style attributes, is ' + me.id + '.';
     fillResourceTypes();
+    // An Access Review links here with its Application chosen.
+    const wanted = new URLSearchParams(window.location.search).get('applicationId');
+    if (wanted && applications.some(function (application) {
+        return application.id === wanted;
+      })) {
+      filterApplication.value = wanted;
+    }
     await refresh();
     document.getElementById('loading').hidden = true;
     document.getElementById('console').hidden = false;

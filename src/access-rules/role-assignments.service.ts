@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { resolveReviewItemsAsRevoked } from '../access-reviews/review-item-resolution';
 import { loadSchemaIndexes, SchemaIndex } from '../applications/schema-index';
 import { AuditLog } from '../audit/audit-log.service';
 import {
@@ -359,7 +360,10 @@ export class RoleAssignmentsService {
     });
   }
 
-  /** Ends an active Role Assignment at once. The row stays, marked revoked. */
+  /**
+   * Ends an active Role Assignment at once. The row stays, marked revoked, and an undecided item for
+   * it in an open Access Review is recorded as revoked by the same Tenant Admin.
+   */
   async revoke(tenantId: string, actorUserId: string, assignmentId: string): Promise<RoleAssignmentView> {
     return this.scoped.inTenant(tenantId, async (tx) => {
       await lockTenant(tx, tenantId);
@@ -377,6 +381,9 @@ export class RoleAssignmentsService {
         toAuditedAssignment(row),
         { reason: END_REASON_LABELS.REVOKED },
       );
+      // Revoking it anywhere (the Role Assignments page, the per-Registered-Resource view) decides
+      // its undecided item in an open Access Review too.
+      await resolveReviewItemsAsRevoked(tx, this.audit, tenantId, [row.id], actorUserId, now);
       return this.viewIn(tx, tenantId, row.id);
     });
   }

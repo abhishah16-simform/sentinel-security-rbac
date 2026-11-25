@@ -1561,6 +1561,43 @@ select:focus {
   margin-top: 4px;
 }
 
+/* An Access Review's progress: certified, revoked and auto-revoked segments; the rest is pending. */
+.progress-bar {
+  display: flex;
+  width: 100%;
+  min-width: 120px;
+  height: 8px;
+  margin: 4px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.progress-bar > .ok {
+  background: var(--ok);
+}
+
+.progress-bar > .bad {
+  background: var(--bad);
+}
+
+.progress-bar > .warn {
+  background: var(--warn);
+}
+
+/* Role Assignments listed in a cell, each with its own small actions. */
+.held-assignments {
+  display: grid;
+  gap: 6px;
+}
+
+.held-assignments > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .event-type small,
 .mono {
   color: var(--muted);

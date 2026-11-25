@@ -9,6 +9,7 @@
   const roleNames = new Map();
   let nextCursor = null;
   let me = null;
+  let resourceApplication = '';
 
   const REASONS = {
     'matched-allow': 'Allowed by a Permission',
@@ -72,6 +73,59 @@
     return cell(wrap, 'nowrap');
   }
 
+  // Revokes one of the member's Role Assignments at once; an undecided item for it in an open Access
+  // Review is decided as revoked too. The report is then worked out again.
+  function revokeButton(row, assignment) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'danger small';
+    button.textContent = 'Revoke';
+    const label = assignment.role.name + ' from ' + memberName(row.member);
+    button.setAttribute('aria-label', 'Revoke ' + label);
+    button.addEventListener('click', async function () {
+      const note = assignment.pendingReviewItemId ? ' This also decides its item in the open Access Review.' : '';
+      if (!window.confirm('Revoke ' + label + '? Their access through this Role ends at once, on every resource.' + note)) return;
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      try {
+        await Sentinel.api('/v1/tenants/current/role-assignments/' + encodeURIComponent(assignment.id) + '/revoke', { method: 'POST' });
+        showMessage(message, 'Revoked ' + label + '.', 'success');
+        showReport(await Sentinel.api(base + '/access'), false);
+      } catch (error) {
+        showMessage(message, error.message, 'error');
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
+    });
+    return button;
+  }
+
+  // The Role Assignments behind a row: which Roles give the member access here, each revocable.
+  function assignmentsCell(row) {
+    const list = document.createElement('div');
+    list.className = 'held-assignments';
+    row.assignments.forEach(function (assignment) {
+      const line = document.createElement('div');
+      const role = document.createElement('a');
+      role.href = '/role.html?id=' + encodeURIComponent(assignment.role.id);
+      role.textContent = assignment.role.name;
+      role.title = assignment.decidesAnswer
+        ? 'Decides at least one answer in this row'
+        : 'Held in ' + resourceApplication + ' but decides nothing on this resource';
+      line.append(role);
+      if (assignment.expiresAt) {
+        const until = document.createElement('small');
+        until.className = 'mono';
+        until.textContent = 'until ' + new Date(assignment.expiresAt).toLocaleDateString();
+        line.append(until);
+      }
+      if (assignment.pendingReviewItemId) line.append(badge('In review', 'accent'));
+      line.append(revokeButton(row, assignment));
+      list.append(line);
+    });
+    return cell(list);
+  }
+
   function memberRow(row) {
     const who = document.createElement('div');
     who.className = 'event-type';
@@ -88,6 +142,7 @@
     row.answers.forEach(function (answer) {
       tr.append(answerCell(answer));
     });
+    tr.append(assignmentsCell(row));
     return tr;
   }
 
@@ -103,6 +158,10 @@
       th.textContent = action.name + (action.deprecated ? ' (Deprecated)' : '');
       head.append(th);
     });
+    const assignments = document.createElement('th');
+    assignments.scope = 'col';
+    assignments.textContent = 'Role Assignments';
+    head.append(assignments);
   }
 
   function showReport(report, append) {
@@ -120,6 +179,14 @@
       document.getElementById('denied-text').textContent = report.deniedBecause
         ? DENIED_BECAUSE[report.deniedBecause] || report.deniedBecause
         : '';
+      resourceApplication = report.resource.application.name;
+      document.getElementById('review-callout').hidden = !report.openReview;
+      if (report.openReview) {
+        document.getElementById('review-text').textContent =
+          'An Access Review of ' + resourceApplication + ' is open until ' + new Date(report.openReview.dueAt).toLocaleString() +
+          '. Revoking a Role Assignment here decides its item in that review.';
+        document.getElementById('review-link').href = '/access-review.html?id=' + encodeURIComponent(report.openReview.id);
+      }
     }
     const built = report.items.map(memberRow);
     if (append) rows.append.apply(rows, built);

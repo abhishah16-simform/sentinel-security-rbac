@@ -56,6 +56,14 @@ export const AUDIT_EVENT_TYPES = {
   'role_assignment.revoked': 'Revoked Role Assignment',
   /** No actor: the Scheduler writes it once a Temporary Role Assignment's expiry time has passed. */
   'role_assignment.expired': 'Role Assignment expired',
+  'access_review.started': 'Started Access Review',
+  'access_review.item_certified': 'Certified Role Assignment in Access Review',
+  /** The Tenant Admin who revoked it, from the review or anywhere else while the item was undecided. */
+  'access_review.item_revoked': 'Revoked Role Assignment in Access Review',
+  /** No actor: the Scheduler writes it for each item still undecided at the due date. */
+  'access_review.item_auto_revoked': 'Auto-revoked Role Assignment in Access Review',
+  /** No actor: the Scheduler closes a review once its due date has passed. */
+  'access_review.closed': 'Closed Access Review',
   /** No actor when the Application wrote it; the Tenant Admin when registered from the console. */
   'registered_resource.created': 'Registered Resource',
   'registered_resource.updated': 'Updated Registered Resource',

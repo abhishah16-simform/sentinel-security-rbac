@@ -96,7 +96,12 @@
       return badge(assignment.expiresAt ? 'Active until ' + new Date(assignment.expiresAt).toLocaleDateString() : 'Active', 'ok');
     }
     if (assignment.status === 'expired') return badge('Expired', 'warn');
-    const reasons = { revoked: 'Revoked', 'role-deleted': 'Role deleted', 'membership-ended': 'Membership ended' };
+    const reasons = {
+      revoked: 'Revoked',
+      'role-deleted': 'Role deleted',
+      'membership-ended': 'Membership ended',
+      'auto-revoked': 'Auto-revoked by Access Review',
+    };
     const span = badge(reasons[assignment.endReason] || 'Revoked', 'bad');
     span.title =
       'Revoked ' + new Date(assignment.revokedAt).toLocaleString() + (assignment.revokedByName ? ' by ' + assignment.revokedByName : '');

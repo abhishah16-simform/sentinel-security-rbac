@@ -11,6 +11,7 @@
     '/application.html': '/applications.html',
     '/role.html': '/roles.html',
     '/registered-resource.html': '/registered-resources.html',
+    '/access-review.html': '/access-reviews.html',
   };
   const current = detailOf[path] || path;
 
@@ -61,7 +62,7 @@
     '<div class="nav-label">Compliance</div>' +
     adminItem('/audit-log.html', 'list', 'Audit log') +
     adminItem('/expiring-access.html', 'clock', 'Expiring access') +
-    soonItem('clipboardCheck', 'Access reviews') +
+    adminItem('/access-reviews.html', 'clipboardCheck', 'Access reviews') +
     soonItem('bell', 'Alerts') +
     '</nav>' +
     '<details class="nav-section nav-locked" id="locked-nav" hidden>' +

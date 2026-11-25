@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Access Review · SENTINEL</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar"></aside>
+      <div class="app-main">
+        <header class="app-header">
+          <button type="button" class="ghost icon sidebar-toggle" data-sidebar-toggle aria-label="Open navigation">
+            <i data-icon="menu"></i>
+          </button>
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <span data-crumb-tenant>Personal</span><span class="sep">/</span><a href="/access-reviews.html">Access Reviews</a><span class="sep">/</span><span aria-current="page" id="crumb-review">Review</span>
+          </nav>
+          <div class="header-end"><span id="health-pill" hidden></span></div>
+        </header>
+
+        <main class="page">
+          <div class="page-header">
+            <div>
+              <h1 id="review-name">Access Review</h1>
+              <p class="subtitle" id="review-subtitle"></p>
+            </div>
+            <div class="filter-actions">
+              <a class="button secondary" id="by-resource" href="/registered-resources.html"><i data-icon="list"></i>Review by resource</a>
+            </div>
+          </div>
+
+          <div id="loading" class="card skeleton-wrap">
+            <div class="skeleton"></div>
+            <div class="skeleton" style="width: 70%"></div>
+          </div>
+
+          <section id="blocked" class="card" hidden>
+            <div class="empty">
+              <span class="icon-tile"><i data-icon="lock"></i></span>
+              <strong id="blocked-title"></strong>
+              <span id="blocked-text"></span>
+              <a class="button secondary" href="/tenants.html" id="blocked-link" hidden>Choose a Tenant</a>
+            </div>
+          </section>
+
+          <div id="console" class="stack" hidden>
+            <p class="callout" id="state-callout"><i data-icon="clock"></i><span id="state-text"></span></p>
+
+            <section class="stats" aria-label="Progress">
+              <div class="card stat">
+                <div class="stat-label"><i data-icon="check"></i>Certified</div>
+                <div class="stat-value" id="count-certified">0</div>
+              </div>
+              <div class="card stat">
+                <div class="stat-label"><i data-icon="lock"></i>Revoked</div>
+                <div class="stat-value" id="count-revoked">0</div>
+              </div>
+              <div class="card stat">
+                <div class="stat-label"><i data-icon="alert"></i>Auto-revoked</div>
+                <div class="stat-value" id="count-auto-revoked">0</div>
+              </div>
+              <div class="card stat">
+                <div class="stat-label"><i data-icon="clock"></i>Pending</div>
+                <div class="stat-value" id="count-pending">0</div>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="items-title">
+              <div class="card-header">
+                <div>
+                  <h2 id="items-title">Items</h2>
+                  <p id="items-text"></p>
+                </div>
+                <span class="icon-tile"><i data-icon="clipboardCheck"></i></span>
+              </div>
+              <div class="card-body" id="progress-wrap"></div>
+              <form id="filters" class="inline-form filters">
+                <label>
+                  Result
+                  <select name="outcome" id="filter-outcome">
+                    <option value="">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="certified">Certified</option>
+                    <option value="revoked">Revoked</option>
+                    <option value="auto-revoked">Auto-revoked</option>
+                  </select>
+                </label>
+              </form>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Member</th>
+                      <th scope="col">Role</th>
+                      <th scope="col">Role Assignment</th>
+                      <th scope="col">Result</th>
+                      <th scope="col">Decision</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows"></tbody>
+                </table>
+              </div>
+              <div id="empty" class="empty" hidden>
+                <span class="icon-tile"><i data-icon="check"></i></span>
+                <strong>Nothing here</strong>
+                <span>No items have this result.</span>
+              </div>
+              <div class="card-footer" id="more-footer" hidden>
+                <span class="hint">More items to show</span>
+                <button type="button" class="secondary small" id="more">Load more</button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <p id="message" class="message toast" role="status" aria-live="polite" hidden></p>
+
+    <script src="/icons.js"></script>
+    <script src="/forms.js"></script>
+    <script src="/session.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/review-progress.js"></script>
+    <script src="/access-review.js"></script>
+  </body>
+</html>
