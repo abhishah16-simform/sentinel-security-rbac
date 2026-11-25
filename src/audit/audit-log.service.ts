@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { type ScopedTransaction, setTenantContext } from '../prisma/scoped-prisma';
+import { runSecurityAlertRules } from '../security-alerts/security-alert-rules';
 import type { AuditEventType } from './audit-event-types';
 import { entryHash, GENESIS_HASH, type HashedEntry, PLATFORM_CHAIN } from './audit-hash';
 
@@ -9,7 +10,7 @@ import { entryHash, GENESIS_HASH, type HashedEntry, PLATFORM_CHAIN } from './aud
 export type AuditPayload = Readonly<Record<string, string | number | boolean | null>>;
 
 export interface AuditTarget {
-  readonly type: 'user' | 'tenant' | 'session' | 'invitation' | 'application' | 'role_template' | 'role' | 'resource' | 'access_review';
+  readonly type: 'user' | 'tenant' | 'session' | 'invitation' | 'application' | 'role_template' | 'role' | 'resource' | 'access_review' | 'security_alert';
   readonly id: string;
 }
 
@@ -50,6 +51,7 @@ interface TenantSetting {
  * The one writer for the Audit Log. Admin and authentication entries join a hash chain: their
  * Tenant's, or the platform chain when they have no Tenant. Writes to one chain are serialized by
  * locking its head row until the transaction ends. Access Checks are written unchained.
+ * Every entry is then run through the Security Alert rules in the same transaction.
  */
 @Injectable()
 export class AuditLog {
@@ -93,6 +95,7 @@ export class AuditLog {
     const hash = entryHash(head.hash, entry);
     await tx.auditEvent.create({ data: { ...entry, payload: event.payload ?? {}, prevHash: head.hash, hash } });
     await tx.auditChainHead.update({ where: { chain }, data: { seq: entry.seq, hash } });
+    await runSecurityAlertRules(tx, { ...entry, eventType: event.eventType, payload: event.payload ?? {} });
 
     await setTenantContext(tx, previous?.value ?? '');
   }
@@ -103,7 +106,7 @@ export class AuditLog {
    * The transaction must already be in the entry's Tenant context; RLS rejects the insert otherwise.
    */
   async recordUnchainedIn(tx: ScopedTransaction, event: AuditEventInput & { readonly tenantId: string }): Promise<void> {
-    await tx.auditEvent.create({
+    const written = await tx.auditEvent.create({
       data: {
         tenantId: event.tenantId,
         eventType: event.eventType,
@@ -114,5 +117,6 @@ export class AuditLog {
         payload: event.payload ?? {},
       },
     });
+    await runSecurityAlertRules(tx, { ...written, eventType: event.eventType, payload: event.payload ?? {} });
   }
 }

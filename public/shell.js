@@ -25,13 +25,6 @@
     return navItem(href, icon, label).replace('<a class="nav-item"', '<a class="nav-item" data-tenant-admin data-label="' + label + '"');
   }
 
-  function soonItem(icon, label) {
-    return (
-      '<span class="nav-item" aria-disabled="true"><i data-icon="' + icon + '"></i>' + label +
-      '<span class="soon">Soon</span></span>'
-    );
-  }
-
   sidebar.innerHTML =
     '<a class="brand" href="/"><span class="brand-mark"><i data-icon="shield"></i></span>SENTINEL</a>' +
     '<a class="workspace none" id="workspace" href="/tenants.html" title="Switch Tenant">' +
@@ -63,7 +56,7 @@
     adminItem('/audit-log.html', 'list', 'Audit log') +
     adminItem('/expiring-access.html', 'clock', 'Expiring access') +
     adminItem('/access-reviews.html', 'clipboardCheck', 'Access reviews') +
-    soonItem('bell', 'Alerts') +
+    adminItem('/security-alerts.html', 'bell', 'Security alerts') +
     '</nav>' +
     '<details class="nav-section nav-locked" id="locked-nav" hidden>' +
     '<summary class="nav-label"><i data-icon="lock"></i><span id="locked-count">Not available</span><i data-icon="chevronRight"></i></summary>' +

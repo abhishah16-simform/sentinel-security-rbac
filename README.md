@@ -202,6 +202,16 @@ Only `DATABASE_URL` is required. Everything else has a local-development default
 - The chain proves entries weren't changed, removed or inserted by anyone who can't also rewrite `audit_chain_heads`. A database superuser who rewinds the head after deleting the newest entries goes undetected; anchoring head hashes outside the database (in a signed export, say) would close that.
 - [`http/audit.http`](http/audit.http) walks through it, including how to tamper with an entry to see the check fail.
 
+## Security Alerts
+
+- `AuditLog` runs the fixed rules (`src/security-alerts/security-alert-rules.ts`) on every entry it writes, chained or not, in the same transaction, so an alert commits or rolls back with the entry that raised it. Raising an alert writes no audit entry, so the rules never see their own output.
+- **Repeated failed logins:** 5 or more within 15 minutes for one User (`auth.login_failed`, plus `auth.email_code_failed` while finishing an MFA login). Raised in every Tenant where the User has a Membership, at most once per Tenant per 15 minutes. A failure for an email nobody uses raises nothing.
+- **Refresh-token reuse:** raised in the login's Active Tenant when the token was reused (the Tenant of the `auth.refresh_token_reused` entry); nothing if the login hadn't chosen one.
+- **Denied Access Checks:** 50 or more `access_check.denied` for one Application in one Tenant within 5 minutes, then not again until 5 minutes after that alert. Concurrent checks take an advisory lock per Tenant and Application before raising; a partial index on denials keeps the count cheap.
+- **Tenant Admin flag:** every `membership.admin_granted` and `membership.admin_revoked`, naming the member and the Tenant Admin who changed it.
+- Raw SQL that compares a `timestamp` column (stored as UTC) with a `Date` parameter must convert the parameter with `AT TIME ZONE 'UTC'`; otherwise Postgres shifts it by the session's `TimeZone` (see `utc()` in the rules).
+- `security_alerts` is Tenant-owned (RLS). Tenant Admins list alerts with `GET /v1/tenants/current/security-alerts` (newest first; filters `status` `open` or `acknowledged`, `rule` `repeated-failed-logins`, `refresh-token-reused`, `access-check-denials-spike` or `tenant-admin-changed`; paginated) and acknowledge one with `POST .../:alertId/acknowledge` (`409` if already acknowledged; writes `security_alert.acknowledged`). The console page is `/security-alerts.html`; [`http/security-alerts.http`](http/security-alerts.http) walks through it.
+
 ## Commands
 
 | Command | What it does |

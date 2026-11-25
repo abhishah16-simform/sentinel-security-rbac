@@ -1,0 +1,78 @@
+# Security Alerts (ticket 16).
+# Needs a Tenant Admin access token with an Active Tenant (see http/tenants.http). To see each rule
+# fire, you also need another member (http/invitations.http) and an enabled Application with its
+# client credentials (http/access-checks.http).
+@baseUrl = http://localhost:9800
+@tenantToken = paste-tenant-admin-access-token
+@memberEmail = paste-a-members-email
+@membershipId = paste-that-members-membership-id
+@clientId = paste-client-id
+@clientSecret = paste-client-secret
+@alertId = paste-alert-id
+
+### -------------------------------------------------------------- Raising alerts
+
+### Rule: Tenant Admin flag changed. Giving the flag raises an alert (granted: true)...
+PATCH {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "isTenantAdmin": true }
+
+### ...and so does removing it (granted: false). Both name the member and who changed it.
+PATCH {{baseUrl}}/v1/tenants/current/memberships/{{membershipId}}
+Authorization: Bearer {{tenantToken}}
+Content-Type: application/json
+
+{ "isTenantAdmin": false }
+
+### Rule: repeated failed logins. Send this 5 times within 15 minutes: the 5th raises one alert in
+### every Tenant the member belongs to; more failures in the window raise nothing more. (It also
+### locks the account for 15 minutes.)
+POST {{baseUrl}}/v1/auth/login
+Content-Type: application/json
+
+{ "email": "{{memberEmail}}", "password": "wrong-password" }
+
+### Rule: refresh-token reuse. After the member has chosen this Tenant, refresh once with their
+### sentinel_refresh cookie, then send the same (now used) cookie again: 401, the login is ended
+### everywhere, and an alert is raised in this Tenant.
+POST {{baseUrl}}/v1/auth/refresh
+Cookie: sentinel_refresh=paste-an-already-used-refresh-token
+
+### Rule: denied Access Checks. With no Role in the Application this is denied; send it 50 times
+### within 5 minutes (a loop with curl is easier) for one alert. More denials in the next 5 minutes
+### raise nothing more.
+POST {{baseUrl}}/v1/access-checks
+Authorization: Basic {{clientId}}:{{clientSecret}}
+Content-Type: application/json
+
+{ "accessToken": "{{tenantToken}}", "action": "read", "resourceType": "Invoice" }
+
+### -------------------------------------------------------------- Tenant Admin: alerts
+
+### Open alerts, newest first. Each has rule, status, subject (the User it is about), actor (who
+### changed the flag), application (for denied Access Checks), details and acknowledgement.
+GET {{baseUrl}}/v1/tenants/current/security-alerts?status=open
+Authorization: Bearer {{tenantToken}}
+
+### Filter by rule: repeated-failed-logins, refresh-token-reused, access-check-denials-spike,
+### tenant-admin-changed. Paginated with limit and cursor.
+GET {{baseUrl}}/v1/tenants/current/security-alerts?rule=tenant-admin-changed&limit=10
+Authorization: Bearer {{tenantToken}}
+
+### Acknowledge one. Any Tenant Admin can; writes security_alert.acknowledged.
+POST {{baseUrl}}/v1/tenants/current/security-alerts/{{alertId}}/acknowledge
+Authorization: Bearer {{tenantToken}}
+
+### 409: already acknowledged
+POST {{baseUrl}}/v1/tenants/current/security-alerts/{{alertId}}/acknowledge
+Authorization: Bearer {{tenantToken}}
+
+### Acknowledged ones
+GET {{baseUrl}}/v1/tenants/current/security-alerts?status=acknowledged
+Authorization: Bearer {{tenantToken}}
+
+### 400: unknown rule
+GET {{baseUrl}}/v1/tenants/current/security-alerts?rule=nope
+Authorization: Bearer {{tenantToken}}

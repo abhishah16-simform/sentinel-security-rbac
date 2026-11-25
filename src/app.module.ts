@@ -13,6 +13,7 @@ import { IdentityModule } from './identity/identity.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RegisteredResourcesModule } from './registered-resources/registered-resources.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { SecurityAlertsModule } from './security-alerts/security-alerts.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
@@ -33,6 +34,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
     IdentityModule,
     RegisteredResourcesModule,
     SchedulerModule,
+    SecurityAlertsModule,
     SessionsModule,
     TenancyModule,
   ],

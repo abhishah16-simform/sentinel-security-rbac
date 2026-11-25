@@ -6,15 +6,15 @@ export type ScopedTransaction = Prisma.TransactionClient;
 
 /**
  * Sets the Tenant whose rows RLS lets this transaction see ('' for none). Must run before any other
- * query in it; the one exception is AuditLog.recordIn, which switches to the entry's chain for
- * its insert and then restores the caller's context.
+ * query in it; the one exception is AuditLog, which switches to the entry's chain for its insert and
+ * the Security Alert rules (which may raise alerts in other Tenants), then restores the caller's context.
  */
 export async function setTenantContext(tx: ScopedTransaction, tenantId: string): Promise<void> {
   await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
 }
 
-/** Sets the User whose own rows user-scoped policies let this transaction see. */
-async function setUserContext(tx: ScopedTransaction, userId: string): Promise<void> {
+/** Sets the User whose own rows user-scoped policies let this transaction see ('' for none). */
+export async function setUserContext(tx: ScopedTransaction, userId: string): Promise<void> {
   await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
 }
 

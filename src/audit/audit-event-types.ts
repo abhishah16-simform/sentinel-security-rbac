@@ -68,6 +68,7 @@ export const AUDIT_EVENT_TYPES = {
   'registered_resource.created': 'Registered Resource',
   'registered_resource.updated': 'Updated Registered Resource',
   'registered_resource.deleted': 'Removed Registered Resource',
+  'security_alert.acknowledged': 'Acknowledged Security Alert',
   /** Access Checks are written unchained (AuditLog.recordUnchainedIn). */
   'access_check.allowed': 'Access Check allowed',
   'access_check.denied': 'Access Check denied',
