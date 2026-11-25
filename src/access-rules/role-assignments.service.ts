@@ -19,6 +19,7 @@ import {
   type EndReasonLabel,
   recordAssignmentEvent,
   revocationData,
+  toAuditedAssignment,
 } from './role-assignment-ending';
 import { ROLE_WITH_PERMISSIONS, type PermissionView, toRoleView } from './role-view';
 import { lockTenant } from './tenant-lock';
@@ -195,30 +196,13 @@ function lookAheadDays(value: string | undefined): number {
   return days;
 }
 
-/** A keyset window over rows ordered by (expiresAt, id); the reports only list rows with an expiry. */
-function expiryWindow(query: PageQuery, direction: 'asc' | 'desc') {
-  const limit = pageSize(query.limit);
-  const orderBy: Prisma.RoleAssignmentOrderByWithRelationInput[] = [{ expiresAt: direction }, { id: direction }];
-  if (query.cursor === undefined) return { limit, take: limit + 1, orderBy, after: {} };
-  const { time, id } = decodeTimeCursor(query.cursor);
+/** A keyset condition for rows after the cursor in a list ordered by (expiresAt, id). */
+function afterExpiryCursor(cursor: string | undefined, direction: 'asc' | 'desc'): Prisma.RoleAssignmentWhereInput {
+  if (cursor === undefined) return {};
+  const { time, id } = decodeTimeCursor(cursor);
   const beyond = direction === 'asc' ? { gt: time } : { lt: time };
   const beyondId = direction === 'asc' ? { gt: id } : { lt: id };
-  const after: Prisma.RoleAssignmentWhereInput = { OR: [{ expiresAt: beyond }, { expiresAt: time, id: beyondId }] };
-  return { limit, take: limit + 1, orderBy, after };
-}
-
-function toExpiryPage(
-  rows: readonly AssignmentRow[],
-  limit: number,
-  enabled: ReadonlySet<string>,
-  now: Date,
-): Page<RoleAssignmentView> {
-  const page = rows.slice(0, limit);
-  const last = page.at(-1);
-  return {
-    items: page.map((row) => toView(row, enabled, now)),
-    nextCursor: rows.length > limit && last?.expiresAt ? encodeTimeCursor({ time: last.expiresAt, id: last.id }) : null,
-  };
+  return { OR: [{ expiresAt: beyond }, { expiresAt: time, id: beyondId }] };
 }
 
 /** Parses an optional expiry time; it must be in the future and at most MAX_EXPIRY_YEARS ahead. */
@@ -279,34 +263,42 @@ export class RoleAssignmentsService {
    */
   async expiringSoon(tenantId: string, query: ExpiringReportQuery): Promise<ExpiringSoonReport> {
     const withinDays = lookAheadDays(query.withinDays);
-    const window = expiryWindow(query, 'asc');
     const now = new Date();
     const windowEnd = new Date(now.getTime() + withinDays * DAY_MS);
-    return this.scoped.inTenant(tenantId, async (tx) => {
-      const rows = await tx.roleAssignment.findMany({
-        where: { AND: [{ tenantId, expiresAt: { lte: windowEnd } }, activeAssignmentWhere(now), window.after] },
-        include: ASSIGNMENT_INCLUDE,
-        orderBy: window.orderBy,
-        take: window.take,
-      });
-      const enabled = await enabledApplications(tx, tenantId, rows.map((row) => row.applicationId));
-      return { asOf: now, withinDays, windowEnd, ...toExpiryPage(rows, window.limit, enabled, now) };
-    });
+    const where = { AND: [{ tenantId, expiresAt: { lte: windowEnd } }, activeAssignmentWhere(now)] };
+    return { withinDays, windowEnd, ...(await this.expiryPage(tenantId, where, query, 'asc', now)) };
   }
 
   /** Expired Role Assignments (expiry passed, never revoked), most recently expired first. */
   async expired(tenantId: string, query: PageQuery): Promise<ExpiryReportPage> {
-    const window = expiryWindow(query, 'desc');
     const now = new Date();
+    return this.expiryPage(tenantId, { AND: [{ tenantId }, statusWhere('expired', now)] }, query, 'desc', now);
+  }
+
+  /** One page of assignments matching where, ordered by (expiresAt, id); every one has an expiry. */
+  private async expiryPage(
+    tenantId: string,
+    where: Prisma.RoleAssignmentWhereInput,
+    query: PageQuery,
+    direction: 'asc' | 'desc',
+    now: Date,
+  ): Promise<ExpiryReportPage> {
+    const limit = pageSize(query.limit);
     return this.scoped.inTenant(tenantId, async (tx) => {
       const rows = await tx.roleAssignment.findMany({
-        where: { AND: [{ tenantId }, statusWhere('expired', now), window.after] },
+        where: { AND: [where, afterExpiryCursor(query.cursor, direction)] },
         include: ASSIGNMENT_INCLUDE,
-        orderBy: window.orderBy,
-        take: window.take,
+        orderBy: [{ expiresAt: direction }, { id: direction }],
+        take: limit + 1,
       });
       const enabled = await enabledApplications(tx, tenantId, rows.map((row) => row.applicationId));
-      return { asOf: now, ...toExpiryPage(rows, window.limit, enabled, now) };
+      const page = rows.slice(0, limit);
+      const last = page.at(-1);
+      return {
+        asOf: now,
+        items: page.map((row) => toView(row, enabled, now)),
+        nextCursor: rows.length > limit && last?.expiresAt ? encodeTimeCursor({ time: last.expiresAt, id: last.id }) : null,
+      };
     });
   }
 
@@ -382,7 +374,7 @@ export class RoleAssignmentsService {
         this.audit,
         'role_assignment.revoked',
         actorUserId,
-        { ...row, roleName: row.role?.name ?? row.roleName, applicationName: row.application.name },
+        toAuditedAssignment(row),
         { reason: END_REASON_LABELS.REVOKED },
       );
       return this.viewIn(tx, tenantId, row.id);

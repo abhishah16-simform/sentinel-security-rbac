@@ -101,6 +101,8 @@
     const more = document.getElementById(name + '-more');
     let nextCursor = null;
     let onPage = function () {};
+    // Bumped on every refresh, so a late answer for an older look-ahead window is dropped.
+    let generation = 0;
 
     function url(cursor) {
       const search = new URLSearchParams();
@@ -123,10 +125,12 @@
     }
 
     more.addEventListener('click', async function () {
+      const asked = generation;
       more.disabled = true;
       more.setAttribute('aria-busy', 'true');
       try {
-        show(await Sentinel.api(url(nextCursor)), true);
+        const page = await Sentinel.api(url(nextCursor));
+        if (asked === generation) show(page, true);
       } catch (error) {
         showMessage(message, error.message, 'error');
       } finally {
@@ -137,7 +141,9 @@
 
     return {
       refresh: async function () {
-        show(await Sentinel.api(url(null)), false);
+        const asked = ++generation;
+        const page = await Sentinel.api(url(null));
+        if (asked === generation) show(page, false);
       },
       onPage: function (callback) {
         onPage = callback;

@@ -54,6 +54,20 @@ export interface AuditedAssignment {
   readonly applicationName: string;
 }
 
+/** An assignment row with its Role (null once deleted) and Application, as its audit entries describe it. */
+export function toAuditedAssignment(row: {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly userId: string;
+  readonly membershipId: string | null;
+  readonly applicationId: string;
+  readonly roleName: string;
+  readonly role: { readonly name: string } | null;
+  readonly application: { readonly name: string };
+}): AuditedAssignment {
+  return { ...row, roleName: row.role?.name ?? row.roleName, applicationName: row.application.name };
+}
+
 /**
  * Writes a role_assignment.* entry in the Tenant's chain, targeting the User so the Audit Log's user
  * filter finds it. actorUserId is null when Sentinel itself made the change (the Scheduler).
@@ -114,7 +128,7 @@ export async function endRoleAssignments(
       audit,
       'role_assignment.revoked',
       actorUserId,
-      { ...assignment, roleName: assignment.role?.name ?? assignment.roleName, applicationName: assignment.application.name },
+      toAuditedAssignment(assignment),
       { reason: END_REASON_LABELS[reason] },
     );
   }

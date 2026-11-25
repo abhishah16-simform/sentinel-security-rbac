@@ -3,14 +3,18 @@ import type { Prisma } from '@prisma/client';
 import { AuditLog } from '../audit/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedPrisma } from '../prisma/scoped-prisma';
-import { recordAssignmentEvent } from './role-assignment-ending';
+import { recordAssignmentEvent, toAuditedAssignment } from './role-assignment-ending';
 import { lockTenant } from './tenant-lock';
 
 /** Tenants read per query while walking the Tenant list. */
 const TENANT_BATCH = 500;
 
-/** Assignments marked per transaction, so the Tenant and its audit chain are never locked for long. */
-const ASSIGNMENT_BATCH = 200;
+/**
+ * Assignments marked per transaction. Each one is a chained audit write (several queries), so this
+ * keeps the transaction well inside Prisma's interactive-transaction timeout and the Tenant and its
+ * audit chain locked only briefly.
+ */
+const ASSIGNMENT_BATCH = 50;
 
 /** Temporary Role Assignments whose expiry time has passed and that nothing has marked or revoked yet. */
 function dueWhere(tenantId: string, now: Date): Prisma.RoleAssignmentWhereInput {
@@ -61,7 +65,7 @@ export class RoleAssignmentExpiry {
   }
 
   /** One Tenant's due assignments, a batch per transaction. Returns how many it marked. */
-  async markExpired(tenantId: string): Promise<number> {
+  private async markExpired(tenantId: string): Promise<number> {
     let marked = 0;
     for (;;) {
       const batch = await this.markBatch(tenantId);
@@ -95,7 +99,7 @@ export class RoleAssignmentExpiry {
           this.audit,
           'role_assignment.expired',
           null,
-          { ...assignment, roleName: assignment.role?.name ?? assignment.roleName, applicationName: assignment.application.name },
+          toAuditedAssignment(assignment),
           { expiresAt: assignment.expiresAt?.toISOString() ?? null },
         );
       }
